@@ -30,7 +30,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { formatCedis, formatCedisShort } from "@/lib/format";
 import { useMutation, useQuery } from "convex/react";
-import { FilePlus2, HandCoins, Loader2, Lock, Percent, Tag, Upload } from "lucide-react";
+import { FilePlus2, HandCoins, Loader2, Lock, Percent, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 

@@ -17,7 +17,7 @@ import {
 import { api } from "@/convex/_generated/api";
 import { formatCedis, formatDate, monthLabel } from "@/lib/format";
 import { useQuery } from "convex/react";
-import { CalendarDays, HandCoins, Mail, Phone, Receipt, Wallet } from "lucide-react";
+import { CalendarDays, HandCoins, Mail, Phone, Receipt, UserRound, Wallet } from "lucide-react";
 
 export default function MemberOverview() {
   const profile = useQuery(api.welfare.getMyMemberProfile);
@@ -26,6 +26,17 @@ export default function MemberOverview() {
 
   if (profile === undefined || payments === undefined || claims === undefined) {
     return <div className="h-64 animate-pulse rounded-xl bg-muted" />;
+  }
+
+  // Signed in but not registered as a member yet
+  if (profile === null) {
+    return (
+      <EmptyState
+        icon={UserRound}
+        title="You are not registered as a member yet"
+        description="Ask the fund admin to add your email so your membership, dues, and benefits appear here."
+      />
+    );
   }
 
   return (

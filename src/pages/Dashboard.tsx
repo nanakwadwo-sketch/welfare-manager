@@ -1,54 +1,171 @@
+import AdminClaims from "@/components/dashboard/AdminClaims";
+import AdminMembers from "@/components/dashboard/AdminMembers";
+import AdminPackages from "@/components/dashboard/AdminPackages";
+import AdminReports from "@/components/dashboard/AdminReports";
+import AdminUsers from "@/components/dashboard/AdminUsers";
+import MemberBenefits from "@/components/dashboard/MemberBenefits";
+import MemberClaims from "@/components/dashboard/MemberClaims";
+import MemberOverview from "@/components/dashboard/MemberOverview";
+import MemberReports from "@/components/dashboard/MemberReports";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/use-auth";
-import { LayoutDashboard, LogOut } from "lucide-react";
+import { api } from "@/convex/_generated/api";
+import { HeartHandshake, LayoutDashboard, LogOut, ShieldCheck } from "lucide-react";
+import { useEffect } from "react";
+import { useMutation } from "convex/react";
 import { useNavigate } from "react-router";
 
+const MEMBER_TABS = [
+  { value: "overview", label: "Overview" },
+  { value: "benefits", label: "Benefits" },
+  { value: "claims", label: "My claims" },
+  { value: "reports", label: "My reports" },
+];
+
+const ADMIN_TABS = [
+  { value: "reports", label: "Reports" },
+  { value: "members", label: "Members" },
+  { value: "claims", label: "Claims" },
+  { value: "packages", label: "Benefit packages" },
+  { value: "users", label: "Users" },
+];
+
 export default function Dashboard() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, isLoading } = useAuth();
   const navigate = useNavigate();
+  const bootstrap = useMutation(api.welfare.bootstrapWelfare);
+
+  // Seed benefit packages and promote the first user to admin (idempotent).
+  useEffect(() => {
+    void bootstrap().catch(() => undefined);
+  }, [bootstrap]);
+
+  const isAdmin = user?.role === "admin";
+  const tabs = isAdmin ? ADMIN_TABS : MEMBER_TABS;
+  const defaultTab = isAdmin ? "reports" : "overview";
 
   const handleSignOut = async () => {
     await signOut();
     navigate("/");
   };
 
-  return (
-    <main className="min-h-screen bg-background px-6 py-10 text-foreground">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
-        <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-medium text-muted-foreground">
-              Authenticated workspace
-            </p>
-            <h1 className="mt-1 text-3xl font-bold tracking-tight">
-              Welcome{user?.name ? `, ${user.name}` : ""}
-            </h1>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            className="cursor-pointer gap-2 self-start"
-            onClick={handleSignOut}
-          >
-            <LogOut className="size-4" />
-            Sign out
-          </Button>
-        </header>
+  if (isLoading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background">
+        <div className="h-64 w-full max-w-3xl animate-pulse rounded-xl bg-muted" />
+      </main>
+    );
+  }
 
-        <Card className="border-border/70 shadow-none">
-          <CardHeader>
-            <div className="mb-3 flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <LayoutDashboard className="size-5" />
+  return (
+    <main className="min-h-screen bg-background text-foreground">
+      <header className="sticky top-0 z-40 border-b border-border/70 bg-background/80 backdrop-blur-md">
+        <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-6">
+          <div className="flex items-center gap-2.5">
+            <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+              <HeartHandshake className="size-4.5" strokeWidth={2.2} />
             </div>
-            <CardTitle>Your dashboard is ready</CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm leading-6 text-muted-foreground">
-            Replace this starter content with the product&apos;s authenticated
-            experience. The route is protected and sign-in returns here by
-            default.
-          </CardContent>
-        </Card>
+            <span className="text-[15px] font-semibold tracking-tight">
+              Welfare<span className="text-primary">Fund</span>
+            </span>
+            {isAdmin && (
+              <Badge className="ml-1 gap-1 bg-primary/10 text-primary hover:bg-primary/10">
+                <ShieldCheck className="size-3" />
+                Admin
+              </Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="hidden text-right sm:block">
+              <p className="text-sm font-medium leading-tight">
+                {user?.name ?? user?.email ?? "Account"}
+              </p>
+              <p className="text-xs leading-tight text-muted-foreground">
+                {user?.email ?? "Signed in"}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={handleSignOut}
+            >
+              <LogOut className="size-4" />
+              Sign out
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto w-full max-w-6xl px-6 py-8">
+        <div className="mb-6 flex items-center gap-2 text-sm text-muted-foreground">
+          <LayoutDashboard className="size-4" />
+          <span>
+            {isAdmin
+              ? "Fund administration workspace"
+              : "Your membership workspace"}
+          </span>
+        </div>
+
+        <Tabs defaultValue={defaultTab} className="gap-6">
+          <TabsList className="h-auto w-full justify-start overflow-x-auto rounded-lg bg-secondary/60 p-1 sm:w-auto">
+            {tabs.map((t) => (
+              <TabsTrigger
+                key={t.value}
+                value={t.value}
+                className="whitespace-nowrap px-4 py-1.5 data-[state=active]:bg-card data-[state=active]:shadow-sm"
+              >
+                {t.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+
+          {isAdmin ? (
+            <>
+              <TabsContent value="reports">
+                <AdminReports />
+              </TabsContent>
+              <TabsContent value="members">
+                <AdminMembers />
+              </TabsContent>
+              <TabsContent value="claims">
+                <AdminClaims />
+              </TabsContent>
+              <TabsContent value="packages">
+                <AdminPackages />
+              </TabsContent>
+              <TabsContent value="users">
+                <AdminUsers />
+              </TabsContent>
+            </>
+          ) : (
+            <>
+              <TabsContent value="overview">
+                <MemberOverview />
+              </TabsContent>
+              <TabsContent value="benefits">
+                <MemberBenefits />
+              </TabsContent>
+              <TabsContent value="claims">
+                <MemberClaims />
+              </TabsContent>
+              <TabsContent value="reports">
+                <MemberReports />
+              </TabsContent>
+            </>
+          )}
+        </Tabs>
+
+        {!isAdmin && (
+          <p className="mt-10 rounded-lg border border-border/70 bg-card/60 px-4 py-3 text-sm text-muted-foreground">
+            Not registered as a member yet? The fund admin adds members by
+            email — ask them to add <span className="font-medium text-foreground">{user?.email}</span>{" "}
+            so your membership appears here.
+          </p>
+        )}
       </div>
     </main>
   );
