@@ -345,8 +345,19 @@ export const bootstrapWelfare = mutation({
     if (!anyAdmin) {
       const userId = await getAuthUserId(ctx);
       if (userId) {
-        await ctx.db.patch(userId, { role: "admin" });
-        await logActivity(ctx, userId, (await ctx.db.get(userId))?.name, "admin.bootstrapped", "First user promoted to admin");
+        const user = await ctx.db.get(userId);
+        // Only promote real (non-guest) accounts with an email — anonymous
+        // sign-ins must never capture the admin role.
+        if (user && !user.isAnonymous && user.email) {
+          await ctx.db.patch(userId, { role: "admin" });
+          await logActivity(
+            ctx,
+            userId,
+            user.name,
+            "admin.bootstrapped",
+            `First admin: ${user.name ?? user.email}`,
+          );
+        }
       }
     }
   },
