@@ -51,6 +51,7 @@ type MemberRow = {
   memberCode: string;
   fullName: string;
   email: string;
+  staffId?: string;
   phone?: string;
   department?: string;
   joinedAt: number;
@@ -68,6 +69,7 @@ type MemberRow = {
 type ParsedRow = {
   fullName: string;
   email: string;
+  staffId: string;
   phone: string;
   department: string;
 };
@@ -89,6 +91,7 @@ export default function AdminMembers() {
         m.fullName.toLowerCase().includes(q) ||
         m.email.toLowerCase().includes(q) ||
         m.memberCode.toLowerCase().includes(q) ||
+        (m.staffId ?? "").toLowerCase().includes(q) ||
         (m.department ?? "").toLowerCase().includes(q),
     );
   }, [members, search]);
@@ -105,7 +108,7 @@ export default function AdminMembers() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name, email, code…"
+            placeholder="Search name, email, staff ID…"
             className="pl-9"
           />
         </div>
@@ -140,6 +143,7 @@ export default function AdminMembers() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Member</TableHead>
+                  <TableHead className="hidden md:table-cell">Staff ID</TableHead>
                   <TableHead className="hidden lg:table-cell">Department</TableHead>
                   <TableHead className="hidden sm:table-cell">Joined</TableHead>
                   <TableHead>Status</TableHead>
@@ -155,6 +159,9 @@ export default function AdminMembers() {
                       <div className="text-xs text-muted-foreground">
                         {m.memberCode} · {m.email}
                       </div>
+                    </TableCell>
+                    <TableCell className="hidden font-mono text-xs text-muted-foreground md:table-cell">
+                      {m.staffId ?? "—"}
                     </TableCell>
                     <TableCell className="hidden text-muted-foreground lg:table-cell">
                       {m.department ?? "—"}
@@ -235,6 +242,7 @@ function AddMemberDialog({
   const addMember = useMutation(api.welfare.adminAddMember);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
+  const [staffId, setStaffId] = useState("");
   const [phone, setPhone] = useState("");
   const [department, setDepartment] = useState("");
   const [joinedAt, setJoinedAt] = useState("");
@@ -243,6 +251,7 @@ function AddMemberDialog({
   const reset = () => {
     setFullName("");
     setEmail("");
+    setStaffId("");
     setPhone("");
     setDepartment("");
     setJoinedAt("");
@@ -258,6 +267,7 @@ function AddMemberDialog({
       await addMember({
         fullName,
         email,
+        staffId: staffId || undefined,
         phone: phone || undefined,
         department: department || undefined,
         joinedAt: joinedAt ? new Date(joinedAt).getTime() : undefined,
@@ -293,13 +303,17 @@ function AddMemberDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-2">
+              <Label htmlFor="add-staffid">Staff ID</Label>
+              <Input id="add-staffid" value={staffId} onChange={(e) => setStaffId(e.target.value)} placeholder="EMP-0123" />
+            </div>
+            <div className="grid gap-2">
               <Label htmlFor="add-phone">Phone</Label>
               <Input id="add-phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="0244 000 111" />
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="add-dept">Department</Label>
-              <Input id="add-dept" value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="Finance" />
-            </div>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="add-dept">Department</Label>
+            <Input id="add-dept" value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="Finance" />
           </div>
           <div className="grid gap-2">
             <Label htmlFor="add-joined">Join date</Label>
@@ -343,6 +357,7 @@ function parseWorkbook(file: File): Promise<ParsedRow[]> {
       .map((row) => ({
         fullName: pick(row, "full name", "fullname", "name"),
         email: pick(row, "email", "email address", "e-mail"),
+        staffId: pick(row, "staff id", "staffid", "staff number", "staff no", "staff"),
         phone: pick(row, "phone", "phone number", "telephone"),
         department: pick(row, "department", "dept"),
       }))
@@ -352,9 +367,9 @@ function parseWorkbook(file: File): Promise<ParsedRow[]> {
 
 function downloadTemplate() {
   const aoa = [
-    ["Full Name", "Email", "Phone", "Department"],
-    ["Kwame Mensah", "kwame.mensah@example.com", "0244 000 111", "Finance"],
-    ["Akosua Boateng", "akosua.boateng@example.com", "0209 111 222", "Operations"],
+    ["Full Name", "Email", "Staff ID", "Phone", "Department"],
+    ["Kwame Mensah", "kwame.mensah@example.com", "EMP-0123", "0244 000 111", "Finance"],
+    ["Akosua Boateng", "akosua.boateng@example.com", "EMP-0124", "0209 111 222", "Operations"],
   ];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const wb = XLSX.utils.book_new();
@@ -431,8 +446,8 @@ function BulkUploadDialog({
         <DialogHeader>
           <DialogTitle>Bulk add members from Excel</DialogTitle>
           <DialogDescription>
-            Upload a .xlsx or .csv file with columns: Full Name, Email, Phone,
-            Department. Members with duplicate emails are skipped.
+            Upload a .xlsx or .csv file with columns: Full Name, Email, Staff
+            ID, Phone, Department. Members with duplicate emails are skipped.
           </DialogDescription>
         </DialogHeader>
 
@@ -482,7 +497,9 @@ function BulkUploadDialog({
                 {parsed.slice(0, 6).map((r, i) => (
                   <li key={i} className="flex justify-between gap-3">
                     <span className="truncate font-medium">{r.fullName || "(no name)"}</span>
-                    <span className="truncate text-muted-foreground">{r.email || "(no email)"}</span>
+                    <span className="truncate text-muted-foreground">
+                      {r.staffId ? `${r.staffId} · ` : ""}{r.email || "(no email)"}
+                    </span>
                   </li>
                 ))}
                 {parsed.length > 6 && (
@@ -526,6 +543,7 @@ function EditMemberDialog({
 }) {
   const updateMember = useMutation(api.welfare.adminUpdateMember);
   const [fullName, setFullName] = useState("");
+  const [staffId, setStaffId] = useState("");
   const [phone, setPhone] = useState("");
   const [department, setDepartment] = useState("");
   const [status, setStatus] = useState<string>("active");
@@ -534,6 +552,7 @@ function EditMemberDialog({
 
   if (member && initializedFor !== member._id) {
     setFullName(member.fullName);
+    setStaffId(member.staffId ?? "");
     setPhone(member.phone ?? "");
     setDepartment(member.department ?? "");
     setStatus(member.status);
@@ -547,6 +566,7 @@ function EditMemberDialog({
       await updateMember({
         memberId: member._id,
         fullName,
+        staffId,
         phone: phone || undefined,
         department: department || undefined,
         status: status as MemberRow["status"],
@@ -578,13 +598,17 @@ function EditMemberDialog({
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="grid gap-2">
+                  <Label htmlFor="edit-staffid">Staff ID</Label>
+                  <Input id="edit-staffid" value={staffId} onChange={(e) => setStaffId(e.target.value)} placeholder="EMP-0123" />
+                </div>
+                <div className="grid gap-2">
                   <Label htmlFor="edit-phone">Phone</Label>
                   <Input id="edit-phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-dept">Department</Label>
-                  <Input id="edit-dept" value={department} onChange={(e) => setDepartment(e.target.value)} />
-                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="edit-dept">Department</Label>
+                <Input id="edit-dept" value={department} onChange={(e) => setDepartment(e.target.value)} />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="edit-status">Status</Label>

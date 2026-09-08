@@ -17,7 +17,7 @@ import {
 import { api } from "@/convex/_generated/api";
 import { formatCedis, formatDate, monthLabel } from "@/lib/format";
 import { useQuery } from "convex/react";
-import { CalendarDays, HandCoins, Mail, Phone, Receipt, UserRound, Wallet } from "lucide-react";
+import { CalendarDays, HandCoins, IdCard, Mail, Phone, Receipt, UserRound, Wallet } from "lucide-react";
 
 export default function MemberOverview() {
   const profile = useQuery(api.welfare.getMyMemberProfile);
@@ -88,6 +88,10 @@ export default function MemberOverview() {
               <div className="flex items-center gap-2.5">
                 <Mail className="size-4 shrink-0 text-muted-foreground" />
                 <span className="truncate text-muted-foreground">{profile.email}</span>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <IdCard className="size-4 shrink-0 text-muted-foreground" />
+                <span className="text-muted-foreground">{profile.staffId ?? "—"}</span>
               </div>
               <div className="flex items-center gap-2.5">
                 <Phone className="size-4 shrink-0 text-muted-foreground" />

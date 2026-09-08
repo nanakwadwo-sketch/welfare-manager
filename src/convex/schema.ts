@@ -40,6 +40,7 @@ const schema = defineSchema(
       email: v.string(),
       memberCode: v.string(), // human friendly unique code, e.g. WMS-0001
       fullName: v.string(),
+      staffId: v.optional(v.string()), // employer staff ID
       phone: v.optional(v.string()),
       department: v.optional(v.string()),
       joinedAt: v.number(), // epoch ms

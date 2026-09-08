@@ -367,6 +367,7 @@ export const adminAddMember = mutation({
   args: {
     fullName: v.string(),
     email: v.string(),
+    staffId: v.optional(v.string()),
     phone: v.optional(v.string()),
     department: v.optional(v.string()),
     joinedAt: v.optional(v.number()),
@@ -385,6 +386,7 @@ export const adminAddMember = mutation({
       email,
       memberCode,
       fullName: args.fullName.trim(),
+      staffId: args.staffId?.trim() || undefined,
       phone: args.phone?.trim() || undefined,
       department: args.department?.trim() || undefined,
       joinedAt,
@@ -408,6 +410,7 @@ export const adminBulkAddMembers = mutation({
       v.object({
         fullName: v.string(),
         email: v.string(),
+        staffId: v.optional(v.string()),
         phone: v.optional(v.string()),
         department: v.optional(v.string()),
       }),
@@ -443,6 +446,7 @@ export const adminBulkAddMembers = mutation({
         email,
         memberCode,
         fullName,
+        staffId: row.staffId?.trim() || undefined,
         phone: row.phone?.trim() || undefined,
         department: row.department?.trim() || undefined,
         joinedAt: Date.now(),
@@ -466,6 +470,7 @@ export const adminUpdateMember = mutation({
   args: {
     memberId: v.id("members"),
     fullName: v.optional(v.string()),
+    staffId: v.optional(v.string()),
     phone: v.optional(v.string()),
     department: v.optional(v.string()),
     status: v.optional(
@@ -482,6 +487,8 @@ export const adminUpdateMember = mutation({
     if (!member) throw new Error("Member not found");
     const patch: Record<string, unknown> = {};
     if (args.fullName !== undefined) patch.fullName = args.fullName.trim();
+    if (args.staffId !== undefined)
+      patch.staffId = args.staffId.trim() || undefined;
     if (args.phone !== undefined) patch.phone = args.phone.trim() || undefined;
     if (args.department !== undefined)
       patch.department = args.department.trim() || undefined;
