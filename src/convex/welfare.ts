@@ -1,6 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { internalMutation, mutation, query, QueryCtx } from "./_generated/server";
+import { mutation, query, QueryCtx } from "./_generated/server";
 
 const MATURITY_MONTHS = 6;
 const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
@@ -190,6 +190,57 @@ export const adminListPayments = query({
   },
 });
 
+export const getMyPayments = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return [];
+    const user = await ctx.db.get(userId);
+    const email = user?.email ?? null;
+    if (!email) return [];
+    const member = await ctx.db
+      .query("members")
+      .withIndex("by_email", (q) => q.eq("email", email.toLowerCase()))
+      .first();
+    if (!member) return [];
+    const payments = await ctx.db
+      .query("duesPayments")
+      .withIndex("by_member", (q) => q.eq("memberId", member._id))
+      .collect();
+    return payments.sort((a, b) => b.recordedAt - a.recordedAt);
+  },
+});
+
+export const adminListUsers = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const users = await ctx.db.query("users").collect();
+    const members = await ctx.db.query("members").collect();
+    const memberByEmail = new Map(members.map((m) => [m.email, m]));
+    return users
+      .map((u) => ({
+        _id: u._id,
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        isAnonymous: u.isAnonymous,
+        memberCode: u.email ? memberByEmail.get(u.email.toLowerCase())?.memberCode : undefined,
+        memberStatus: u.email ? memberByEmail.get(u.email.toLowerCase())?.status : undefined,
+      }))
+      .sort((a, b) => (a.name ?? a.email ?? "").localeCompare(b.name ?? b.email ?? ""));
+  },
+});
+
+export const listPackages = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return [];
+    return ctx.db.query("benefitPackages").collect();
+  },
+});
+
 export const adminListPackages = query({
   args: {},
   handler: async (ctx) => requireAdmin(ctx).then(() =>
@@ -271,14 +322,32 @@ async function nextMemberCode(ctx: any): Promise<string> {
   return `WMS-${String(max + 1).padStart(4, "0")}`;
 }
 
-export const seedDefaults = internalMutation({
+/**
+ * One-time bootstrap, safe to call on every dashboard load:
+ * - seeds the default benefit packages when the table is empty
+ * - promotes the first signed-in user to admin when no admin exists yet
+ */
+export const bootstrapWelfare = mutation({
   args: {},
   handler: async (ctx) => {
-    const existing = await ctx.db.query("benefitPackages").collect();
-    if (existing.length > 0) return;
-    const now = Date.now();
-    for (const pkg of DEFAULT_PACKAGES) {
-      await ctx.db.insert("benefitPackages", { ...pkg, updatedAt: now });
+    const packages = await ctx.db.query("benefitPackages").collect();
+    if (packages.length === 0) {
+      const now = Date.now();
+      for (const pkg of DEFAULT_PACKAGES) {
+        await ctx.db.insert("benefitPackages", { ...pkg, updatedAt: now });
+      }
+    }
+
+    const anyAdmin = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("role"), "admin"))
+      .first();
+    if (!anyAdmin) {
+      const userId = await getAuthUserId(ctx);
+      if (userId) {
+        await ctx.db.patch(userId, { role: "admin" });
+        await logActivity(ctx, userId, (await ctx.db.get(userId))?.name, "admin.bootstrapped", "First user promoted to admin");
+      }
     }
   },
 });
@@ -456,6 +525,28 @@ export const adminRecordDues = mutation({
       user?.name,
       "dues.recorded",
       `GH¢${args.amount.toFixed(2)} for ${member.fullName} (${args.periodMonth})`,
+    );
+  },
+});
+
+export const adminSetUserRole = mutation({
+  args: {
+    userId: v.id("users"),
+    role: v.union(v.literal("admin"), v.literal("member"), v.literal("user")),
+  },
+  handler: async (ctx, args) => {
+    const { userId, user } = await requireAdmin(ctx);
+    if (args.userId === userId && args.role !== "admin")
+      throw new Error("You cannot remove your own admin access");
+    const target = await ctx.db.get(args.userId);
+    if (!target) throw new Error("User not found");
+    await ctx.db.patch(args.userId, { role: args.role });
+    await logActivity(
+      ctx,
+      userId,
+      user?.name,
+      "user.role_changed",
+      `${target.name ?? target.email ?? "User"} is now ${args.role}`,
     );
   },
 });
