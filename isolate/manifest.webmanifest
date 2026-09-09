@@ -1,7 +1,7 @@
 {
-  "name": "freebuff.com application",
-  "short_name": "freebuff.com",
-  "description": "freebuff.com application",
+  "name": "KGH Staff Welfare",
+  "short_name": "KGH Welfare",
+  "description": "KGH Staff Welfare — dues, benefits, claims, and events for staff",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
