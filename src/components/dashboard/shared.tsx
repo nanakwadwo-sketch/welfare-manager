@@ -11,7 +11,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { formatDateTime } from "@/lib/format";
+import { formatBytes, formatDateTime, MAX_FILE_BYTES } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery } from "convex/react";
 import {
@@ -36,6 +36,48 @@ export function readFileAsDataUrl(file: File): Promise<string> {
     reader.onload = () => resolve(reader.result as string);
     reader.onerror = () => reject(new Error("Could not read file"));
     reader.readAsDataURL(file);
+  });
+}
+
+export const MAX_FILE_BYTES_LOCAL = MAX_FILE_BYTES;
+
+/**
+ * Uploads a supporting document (max 2MB) to Convex file storage and records
+ * it against the claim.
+ */
+export async function uploadClaimDocument(
+  addDoc: (args: {
+    claimId: Id<"claims">;
+    name: string;
+    mimeType: string;
+    size: number;
+    storageId: Id<"_storage">;
+  }) => Promise<unknown>,
+  generateUploadUrl: () => Promise<string>,
+  claimId: Id<"claims">,
+  file: File,
+) {
+  if (file.size > MAX_FILE_BYTES) {
+    throw new Error(
+      `${file.name} is ${formatBytes(file.size)} — the maximum size is 2MB`,
+    );
+  }
+  const url = await generateUploadUrl();
+  const result = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+    body: file,
+  });
+  if (!result.ok) {
+    throw new Error(`Upload failed for ${file.name} (HTTP ${result.status})`);
+  }
+  const { storageId } = (await result.json()) as { storageId: Id<"_storage"> };
+  await addDoc({
+    claimId,
+    name: file.name,
+    mimeType: file.type || "application/octet-stream",
+    size: file.size,
+    storageId,
   });
 }
 
@@ -208,6 +250,7 @@ export function ClaimDocumentsDialog({
 }) {
   const docs = useQuery(api.welfare.listClaimDocuments, { claimId });
   const addDoc = useMutation(api.welfare.addClaimDocument);
+  const generateUploadUrl = useMutation(api.welfare.generateUploadUrl);
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -216,17 +259,12 @@ export function ClaimDocumentsDialog({
     setUploading(true);
     try {
       for (const file of Array.from(files)) {
-        if (file.size > 3_000_000) {
-          toast.error(`${file.name} is larger than 3MB`);
-          continue;
-        }
-        const dataUrl = await readFileAsDataUrl(file);
-        await addDoc({
+        await uploadClaimDocument(
+          (args) => addDoc(args),
+          () => generateUploadUrl(),
           claimId,
-          name: file.name,
-          mimeType: file.type || "application/octet-stream",
-          dataUrl,
-        });
+          file,
+        );
       }
       toast.success("Document(s) uploaded");
     } catch (err) {
@@ -247,7 +285,7 @@ export function ClaimDocumentsDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
             Payslips, invitation, transfer or retirement letters supporting
-            this claim.
+            this claim. Each file may be up to 2MB.
           </DialogDescription>
         </DialogHeader>
 
@@ -263,48 +301,22 @@ export function ClaimDocumentsDialog({
           ) : (
             docs.map((doc) =>
               doc.mimeType.startsWith("image/") ? (
-                <figure
+                <StoredImage
                   key={doc._id}
-                  className="overflow-hidden rounded-lg border border-border/70"
-                >
-                  <img
-                    src={doc.dataUrl}
-                    alt={doc.name}
-                    className="max-h-56 w-full bg-secondary/40 object-contain"
-                  />
-                  <figcaption className="flex items-center justify-between gap-2 border-t px-3 py-2 text-xs">
-                    <span className="truncate font-medium">{doc.name}</span>
-                    <a
-                      href={doc.dataUrl}
-                      download={doc.name}
-                      className="shrink-0 font-medium text-primary hover:underline"
-                    >
-                      Download
-                    </a>
-                  </figcaption>
-                </figure>
+                  name={doc.name}
+                  storageId={doc.storageId}
+                  dataUrl={doc.dataUrl}
+                  uploadedAt={doc.uploadedAt}
+                />
               ) : (
-                <div
+                <StoredFileRow
                   key={doc._id}
-                  className="flex items-center justify-between gap-2 rounded-lg border border-border/70 px-3 py-2.5"
-                >
-                  <div className="flex min-w-0 items-center gap-2">
-                    <FileText className="size-4 shrink-0 text-muted-foreground" />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{doc.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDateTime(doc.uploadedAt)}
-                      </p>
-                    </div>
-                  </div>
-                  <a
-                    href={doc.dataUrl}
-                    download={doc.name}
-                    className="shrink-0 text-sm font-medium text-primary hover:underline"
-                  >
-                    Download
-                  </a>
-                </div>
+                  name={doc.name}
+                  storageId={doc.storageId}
+                  dataUrl={doc.dataUrl}
+                  size={doc.size}
+                  uploadedAt={doc.uploadedAt}
+                />
               ),
             )
           )}
@@ -334,9 +346,98 @@ export function ClaimDocumentsDialog({
               )}
               {uploading ? "Uploading…" : "Attach document"}
             </Button>
+            <p className="mt-2 text-center text-xs text-muted-foreground">
+              Maximum 2MB per file.
+            </p>
           </div>
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ---------- Stored document views ----------
+
+function StoredImage({
+  name,
+  storageId,
+  dataUrl,
+  uploadedAt,
+}: {
+  name: string;
+  storageId?: Id<"_storage">;
+  dataUrl?: string;
+  uploadedAt: number;
+}) {
+  const url = useQuery(
+    api.welfare.getClaimDocumentUrl,
+    storageId ? ({ storageId } as any) : "skip",
+  );
+  return (
+    <figure className="overflow-hidden rounded-lg border border-border/70">
+      {url ? (
+        <img
+          src={url}
+          alt={name}
+          className="max-h-56 w-full bg-secondary/40 object-contain"
+        />
+      ) : dataUrl ? (
+        <img
+          src={dataUrl}
+          alt={name}
+          className="max-h-56 w-full bg-secondary/40 object-contain"
+        />
+      ) : null}
+      <figcaption className="flex items-center justify-between gap-2 border-t px-3 py-2 text-xs">
+        <span className="truncate font-medium">{name}</span>
+        <a
+          href={url ?? dataUrl ?? "#"}
+          download={name}
+          className="shrink-0 font-medium text-primary hover:underline"
+        >
+          Download
+        </a>
+      </figcaption>
+    </figure>
+  );
+}
+
+function StoredFileRow({
+  name,
+  storageId,
+  dataUrl,
+  size,
+  uploadedAt,
+}: {
+  name: string;
+  storageId?: Id<"_storage">;
+  dataUrl?: string;
+  size?: number;
+  uploadedAt: number;
+}) {
+  const url = useQuery(
+    api.welfare.getClaimDocumentUrl,
+    storageId ? ({ storageId } as any) : "skip",
+  );
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-lg border border-border/70 px-3 py-2.5">
+      <div className="flex min-w-0 items-center gap-2">
+        <FileText className="size-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium">{name}</p>
+          <p className="text-xs text-muted-foreground">
+            {formatDateTime(uploadedAt)}
+            {size !== undefined && ` · ${formatBytes(size)}`}
+          </p>
+        </div>
+      </div>
+      <a
+        href={url ?? dataUrl ?? "#"}
+        download={name}
+        className="shrink-0 text-sm font-medium text-primary hover:underline"
+      >
+        Download
+      </a>
+    </div>
   );
 }

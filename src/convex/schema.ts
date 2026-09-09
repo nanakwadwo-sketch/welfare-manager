@@ -66,13 +66,40 @@ const schema = defineSchema(
 
     // Configurable benefit packages. Seeded with the default GH¢ amounts.
     benefitPackages: defineTable({
-      key: v.string(), // "death_parent" | "death_spouse" | "death_child" | "exit"
+      key: v.string(), // "death_parent" | "death_spouse" | "death_child" | "wedding" | "retirement" | ...
       label: v.string(),
       kind: v.union(v.literal("fixed"), v.literal("percent")),
       amount: v.number(), // fixed GH¢ value, or percent of total contribution
       percentOfContribution: v.optional(v.number()), // e.g. 70 for exit claims
       updatedAt: v.number(),
     }).index("by_key", ["key"]),
+
+    // Admin-created events (excursions, funerals, weddings) members register for.
+    welfareEvents: defineTable({
+      title: v.string(),
+      type: v.union(
+        v.literal("excursion"),
+        v.literal("funeral"),
+        v.literal("wedding"),
+        v.literal("other"),
+      ),
+      description: v.optional(v.string()),
+      location: v.optional(v.string()),
+      eventDate: v.number(), // epoch ms
+      createdBy: v.id("users"),
+      createdAt: v.number(),
+    })
+      .index("by_date", ["eventDate"])
+      .index("by_creator", ["createdBy"]),
+
+    // A member signing up to attend an event (one per member per event).
+    eventRegistrations: defineTable({
+      eventId: v.id("welfareEvents"),
+      memberId: v.id("members"),
+      registeredAt: v.number(),
+    })
+      .index("by_event", ["eventId"])
+      .index("by_member", ["memberId"]),
 
     // Claims filed by members, reviewed by admin.
     claims: defineTable({
@@ -94,12 +121,15 @@ const schema = defineSchema(
       .index("by_member", ["memberId"])
       .index("by_status", ["status"]),
 
-    // Supporting documents attached to a claim (stored as data URLs for v1).
+    // Supporting documents attached to a claim. New uploads go straight to
+    // Convex file storage (storageId); legacy rows keep their dataUrl.
     claimDocuments: defineTable({
       claimId: v.id("claims"),
       name: v.string(),
       mimeType: v.string(),
-      dataUrl: v.string(),
+      storageId: v.optional(v.id("_storage")),
+      dataUrl: v.optional(v.string()),
+      size: v.optional(v.number()),
       uploadedAt: v.number(),
       uploadedBy: v.id("users"),
     }).index("by_claim", ["claimId"]),

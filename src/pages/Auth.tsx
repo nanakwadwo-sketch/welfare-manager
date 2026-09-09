@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/input-otp";
 
 import { useAuth } from "@/hooks/use-auth";
-import logo from "@/assets/logo.svg";
+import ghsLogo from "@/assets/ghs-logo.jpg";
 import { ArrowRight, Loader2, Mail, UserX } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
@@ -118,19 +118,21 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
         <div className="flex items-center justify-center h-full flex-col">
         <Card className="min-w-[350px] pb-0 border shadow-md">
           {step === "signIn" ? (
-            <>
-              <CardHeader className="text-center">
+            <>                <CardHeader className="text-center">
               <div className="flex justify-center">
                     <img
-                      src={logo}
-                      alt="Lock Icon"
+                      src={ghsLogo}
+                      alt="Ghana Health Service"
                       width={64}
                       height={64}
-                      className="rounded-lg mb-4 mt-4 cursor-pointer"
+                      className="rounded-lg mb-4 mt-4 cursor-pointer object-contain"
                       onClick={() => navigate("/")}
                     />
                   </div>
                 <CardTitle className="text-xl">Get Started</CardTitle>
+                <CardDescription className="text-[15px] font-medium text-foreground">
+                  KGH Staff Welfare
+                </CardDescription>
                 <CardDescription>
                   Enter your email to log in or sign up
                 </CardDescription>

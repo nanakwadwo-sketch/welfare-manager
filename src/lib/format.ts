@@ -42,3 +42,13 @@ export function currentPeriod(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
+
+/** Max supporting-document upload size (2MB). */
+export const MAX_FILE_BYTES = 2 * 1024 * 1024;
+
+/** Human-readable file size, e.g. "1.4 MB" */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}

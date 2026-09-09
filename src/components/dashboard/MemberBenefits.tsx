@@ -1,4 +1,4 @@
-import { readFileAsDataUrl } from "@/components/dashboard/shared";
+import { uploadClaimDocument } from "@/components/dashboard/shared";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -38,6 +38,7 @@ const PACKAGE_ORDER = [
   "death_parent",
   "death_spouse",
   "death_child",
+  "wedding",
   "retirement",
   "transfer",
   "resignation",
@@ -72,6 +73,15 @@ export default function MemberBenefits() {
         </div>
         <FileClaimDialog matured={matured} totalPaid={totalPaid} packages={sorted} />
       </div>
+
+      {profile?.hasBenefitedBefore && (
+        <p className="rounded-lg border border-border/70 bg-secondary/50 px-4 py-3 text-sm text-muted-foreground">
+          You have received a benefit before. For repeat claims on wedding,
+          funerals, and retirement you keep the full package amount — any other
+          benefit type (transfer, resignation) pays 60% of your total
+          contribution.
+        </p>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {sorted.map((pkg) => (
@@ -136,6 +146,7 @@ function FileClaimDialog({
 
   const fileClaim = useMutation(api.welfare.fileClaim);
   const addDoc = useMutation(api.welfare.addClaimDocument);
+  const generateUploadUrl = useMutation(api.welfare.generateUploadUrl);
 
   const selected = packages.find((p) => p.key === benefitKey);
   const previewAmount = selected
@@ -168,17 +179,12 @@ function FileClaimDialog({
       });
       if (files) {
         for (const file of Array.from(files)) {
-          if (file.size > 3_000_000) {
-            toast.error(`${file.name} is larger than 3MB`);
-            continue;
-          }
-          const dataUrl = await readFileAsDataUrl(file);
-          await addDoc({
+          await uploadClaimDocument(
+            (args) => addDoc(args),
+            () => generateUploadUrl(),
             claimId,
-            name: file.name,
-            mimeType: file.type || "application/octet-stream",
-            dataUrl,
-          });
+            file,
+          );
         }
       }
       toast.success("Claim filed — the admin will review it shortly");
@@ -278,6 +284,9 @@ function FileClaimDialog({
               <Upload className="size-4" />
               Attach payslip, letter, or photos
             </Button>
+            <p className="text-xs text-muted-foreground">
+              Maximum 2MB per file (PDF, image, or Word document).
+            </p>
           </div>
         </div>
 

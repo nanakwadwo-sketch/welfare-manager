@@ -72,6 +72,8 @@ type ParsedRow = {
   staffId: string;
   phone: string;
   department: string;
+  joinedAtMs?: number;
+  joinDateRaw: string;
 };
 
 export default function AdminMembers() {
@@ -341,7 +343,7 @@ function parseWorkbook(file: File): Promise<ParsedRow[]> {
     const wb = XLSX.read(buf);
     const ws = wb.Sheets[wb.SheetNames[0]];
     if (!ws) return [];
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "" });
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "", raw: false });
     const pick = (row: Record<string, unknown>, ...keys: string[]) => {
       for (const key of keys) {
         const found = Object.keys(row).find(
@@ -354,27 +356,59 @@ function parseWorkbook(file: File): Promise<ParsedRow[]> {
       return "";
     };
     return rows
-      .map((row) => ({
-        fullName: pick(row, "full name", "fullname", "name"),
-        email: pick(row, "email", "email address", "e-mail"),
-        staffId: pick(row, "staff id", "staffid", "staff number", "staff no", "staff"),
-        phone: pick(row, "phone", "phone number", "telephone"),
-        department: pick(row, "department", "dept"),
-      }))
+      .map((row) => {
+        const joinDateRaw = pick(
+          row,
+          "join date",
+          "joindate",
+          "joined",
+          "date joined",
+          "date of joining",
+          "joining date",
+          "start date",
+        );
+        return {
+          fullName: pick(row, "full name", "fullname", "name"),
+          email: pick(row, "email", "email address", "e-mail"),
+          staffId: pick(row, "staff id", "staffid", "staff number", "staff no", "staff"),
+          phone: pick(row, "phone", "phone number", "telephone"),
+          department: pick(row, "department", "dept"),
+          joinedAtMs: joinDateRaw ? parseJoinDate(joinDateRaw) : undefined,
+          joinDateRaw,
+        };
+      })
       .filter((r) => r.fullName || r.email);
   });
 }
 
 function downloadTemplate() {
   const aoa = [
-    ["Full Name", "Email", "Staff ID", "Phone", "Department"],
-    ["Kwame Mensah", "kwame.mensah@example.com", "EMP-0123", "0244 000 111", "Finance"],
-    ["Akosua Boateng", "akosua.boateng@example.com", "EMP-0124", "0209 111 222", "Operations"],
+    ["Full Name", "Email", "Staff ID", "Phone", "Department", "Join Date"],
+    ["Kwame Mensah", "kwame.mensah@example.com", "EMP-0123", "0244 000 111", "Finance", "2025-03-15"],
+    ["Akosua Boateng", "akosua.boateng@example.com", "EMP-0124", "0209 111 222", "Operations", "2024-11-02"],
   ];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Members");
   XLSX.writeFile(wb, "welfare-members-template.xlsx");
+}
+
+/** Parses a join date cell into epoch ms (UTC-based, so imports are stable). */
+function parseJoinDate(value: string): number | undefined {
+  const raw = value.trim();
+  if (!raw) return undefined;
+  const dmy = raw.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+  if (dmy) {
+    const t = Date.UTC(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]));
+    return Number.isFinite(t) ? t : undefined;
+  }
+  const ymd = raw.match(/^(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})$/);
+  if (ymd) {
+    const t = Date.UTC(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]));
+    return Number.isFinite(t) ? t : undefined;
+  }
+  const t = new Date(raw).getTime();
+  return Number.isFinite(t) ? t : undefined;
 }
 
 function BulkUploadDialog({
@@ -447,7 +481,8 @@ function BulkUploadDialog({
           <DialogTitle>Bulk add members from Excel</DialogTitle>
           <DialogDescription>
             Upload a .xlsx or .csv file with columns: Full Name, Email, Staff
-            ID, Phone, Department. Members with duplicate emails are skipped.
+            ID, Phone, Department, and Join Date (YYYY-MM-DD). Members with
+            duplicate emails are skipped; blank join dates use today.
           </DialogDescription>
         </DialogHeader>
 
@@ -499,6 +534,7 @@ function BulkUploadDialog({
                     <span className="truncate font-medium">{r.fullName || "(no name)"}</span>
                     <span className="truncate text-muted-foreground">
                       {r.staffId ? `${r.staffId} · ` : ""}{r.email || "(no email)"}
+                      {r.joinedAtMs ? ` · joined ${formatDate(r.joinedAtMs)}` : ""}
                     </span>
                   </li>
                 ))}

@@ -5,10 +5,17 @@ import { mutation, query, QueryCtx } from "./_generated/server";
 const MATURITY_MONTHS = 6;
 const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 
+// Maximum size of a single supporting document upload.
+export const MAX_FILE_BYTES = 2 * 1024 * 1024; // 2MB
+// Legacy data-URL documents: base64 inflates files by ~1.37x plus the
+// data: prefix, so cap the stored string just above a 2MB file.
+const MAX_DATA_URL_CHARS = 2_950_000;
+
 export const BENEFIT_KEYS = [
   "death_parent",
   "death_spouse",
   "death_child",
+  "wedding",
   "retirement",
   "transfer",
   "resignation",
@@ -19,10 +26,23 @@ export const BENEFIT_LABELS: Record<BenefitKey, string> = {
   death_parent: "Death of a parent",
   death_spouse: "Death of a spouse",
   death_child: "Death of a child",
+  wedding: "Wedding",
   retirement: "Retirement",
   transfer: "Transfer",
   resignation: "Resignation",
 };
+
+// Claims that always pay their full configured amount. Every other benefit
+// pays only 60% of the total contribution once a member has already been
+// paid a benefit before.
+const REPEAT_EXEMPT_KEYS: ReadonlySet<string> = new Set([
+  "retirement",
+  "wedding",
+  "death_parent",
+  "death_spouse",
+  "death_child",
+]);
+export const REPEAT_BENEFICIARY_PERCENT = 60;
 
 const DEFAULT_PACKAGES: Array<{
   key: BenefitKey;
@@ -34,6 +54,7 @@ const DEFAULT_PACKAGES: Array<{
   { key: "death_parent", label: "Death of a parent", kind: "fixed", amount: 500 },
   { key: "death_spouse", label: "Death of a spouse", kind: "fixed", amount: 1000 },
   { key: "death_child", label: "Death of a child", kind: "fixed", amount: 1000 },
+  { key: "wedding", label: "Wedding", kind: "fixed", amount: 500 },
   { key: "retirement", label: "Retirement", kind: "percent", amount: 70, percentOfContribution: 70 },
   { key: "transfer", label: "Transfer", kind: "percent", amount: 70, percentOfContribution: 70 },
   { key: "resignation", label: "Resignation", kind: "percent", amount: 70, percentOfContribution: 70 },
@@ -102,11 +123,18 @@ export const getMyMemberProfile = query({
       .query("duesPayments")
       .withIndex("by_member", (q) => q.eq("memberId", member._id))
       .collect();
+    const myClaims = await ctx.db
+      .query("claims")
+      .withIndex("by_member", (q) => q.eq("memberId", member._id))
+      .collect();
     return {
       ...member,
       maturity: memberMaturity(member, Date.now()),
       totalPaid: payments.reduce((sum, p) => sum + p.amount, 0),
       paymentCount: payments.length,
+      hasBenefitedBefore: myClaims.some(
+        (c) => c.status === "approved" || c.status === "paid",
+      ),
     };
   },
 });
@@ -311,6 +339,68 @@ export const adminListActivity = query({
   },
 });
 
+// ---------- Events ----------
+
+export const listEvents = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return [];
+    const user = await ctx.db.get(userId);
+    const email = user?.email ?? null;
+    const myMember = email
+      ? await ctx.db
+          .query("members")
+          .withIndex("by_email", (q) => q.eq("email", email.toLowerCase()))
+          .first()
+      : null;
+
+    const events = await ctx.db
+      .query("welfareEvents")
+      .withIndex("by_date")
+      .order("desc")
+      .collect();
+    const registrations = await ctx.db.query("eventRegistrations").collect();
+
+    return events.map((e) => {
+      const forEvent = registrations.filter((r) => r.eventId === e._id);
+      return {
+        ...e,
+        registrationCount: forEvent.length,
+        registered: !!myMember && forEvent.some((r) => r.memberId === myMember._id),
+      };
+    });
+  },
+});
+
+export const adminListEventRegistrations = query({
+  args: { eventId: v.id("welfareEvents") },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const regs = await ctx.db
+      .query("eventRegistrations")
+      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+      .collect();
+    const members = await ctx.db.query("members").collect();
+    const byId = new Map(members.map((m) => [m._id, m]));
+    return regs
+      .map((r) => {
+        const m = byId.get(r.memberId);
+        return {
+          _id: r._id,
+          registeredAt: r.registeredAt,
+          memberId: r.memberId,
+          fullName: m?.fullName ?? "Unknown",
+          memberCode: m?.memberCode ?? "—",
+          email: m?.email ?? "—",
+          staffId: m?.staffId,
+          phone: m?.phone,
+        };
+      })
+      .sort((a, b) => a.fullName.localeCompare(b.fullName));
+  },
+});
+
 // ---------- Mutations ----------
 
 async function nextMemberCode(ctx: any): Promise<string> {
@@ -322,19 +412,33 @@ async function nextMemberCode(ctx: any): Promise<string> {
   return `WMS-${String(max + 1).padStart(4, "0")}`;
 }
 
+// The benefit keys seeded into an empty deployment (also used to backfill
+// packages added in later app versions, e.g. the wedding benefit).
+const SEEDED_PACKAGE_KEYS = new Set(DEFAULT_PACKAGES.map((p) => p.key));
+
 /**
  * One-time bootstrap, safe to call on every dashboard load:
  * - seeds the default benefit packages when the table is empty
+ * - backfills benefit packages added in later app versions (e.g. wedding)
  * - promotes the first signed-in user to admin when no admin exists yet
  */
 export const bootstrapWelfare = mutation({
   args: {},
   handler: async (ctx) => {
     const packages = await ctx.db.query("benefitPackages").collect();
+    const now = Date.now();
     if (packages.length === 0) {
-      const now = Date.now();
       for (const pkg of DEFAULT_PACKAGES) {
         await ctx.db.insert("benefitPackages", { ...pkg, updatedAt: now });
+      }
+    } else {
+      // Backfill: seed any default package key that does not exist yet so
+      // existing deployments pick up newly added benefits (e.g. wedding).
+      const present = new Set(packages.map((p) => p.key));
+      for (const pkg of DEFAULT_PACKAGES) {
+        if (!present.has(pkg.key)) {
+          await ctx.db.insert("benefitPackages", { ...pkg, updatedAt: now });
+        }
       }
     }
 
@@ -413,6 +517,7 @@ export const adminBulkAddMembers = mutation({
         staffId: v.optional(v.string()),
         phone: v.optional(v.string()),
         department: v.optional(v.string()),
+        joinedAt: v.optional(v.number()),
       }),
     ),
   },
@@ -449,7 +554,7 @@ export const adminBulkAddMembers = mutation({
         staffId: row.staffId?.trim() || undefined,
         phone: row.phone?.trim() || undefined,
         department: row.department?.trim() || undefined,
-        joinedAt: Date.now(),
+        joinedAt: row.joinedAt ?? Date.now(),
         status: "active",
         totalContributed: 0,
       });
@@ -650,10 +755,29 @@ export const fileClaim = mutation({
       .withIndex("by_member", (q) => q.eq("memberId", member._id))
       .collect();
     const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
-    const amount =
-      pkg.kind === "percent"
-        ? Math.round(((pkg.percentOfContribution ?? pkg.amount) / 100) * totalPaid * 100) / 100
-        : pkg.amount;
+
+    // Has this member already been paid a benefit before? Repeat
+    // beneficiaries on non-exempt benefits receive 60% of their total
+    // contribution instead of the fixed package amount.
+    const previousClaims = await ctx.db
+      .query("claims")
+      .withIndex("by_member", (q) => q.eq("memberId", member._id))
+      .collect();
+    const hasBenefitedBefore = previousClaims.some(
+      (c) => c.status === "approved" || c.status === "paid",
+    );
+    const isRepeatBeneficiary = hasBenefitedBefore;
+
+    let amount: number;
+    if (pkg.kind === "percent") {
+      amount =
+        Math.round(((pkg.percentOfContribution ?? pkg.amount) / 100) * totalPaid * 100) / 100;
+    } else if (isRepeatBeneficiary && !REPEAT_EXEMPT_KEYS.has(pkg.key)) {
+      amount =
+        Math.round((REPEAT_BENEFICIARY_PERCENT / 100) * totalPaid * 100) / 100;
+    } else {
+      amount = pkg.amount;
+    }
 
     const claimId = await ctx.db.insert("claims", {
       memberId: member._id,
@@ -668,7 +792,11 @@ export const fileClaim = mutation({
       userId,
       user?.name,
       "claim.filed",
-      `${member.fullName} filed ${BENEFIT_LABELS[args.benefitKey as BenefitKey] ?? args.benefitKey} (GH¢${amount.toFixed(2)})`,
+      `${member.fullName} filed ${BENEFIT_LABELS[args.benefitKey as BenefitKey] ?? args.benefitKey} (GH¢${amount.toFixed(2)})${
+        isRepeatBeneficiary && !REPEAT_EXEMPT_KEYS.has(args.benefitKey)
+          ? ` — repeat beneficiary at ${REPEAT_BENEFICIARY_PERCENT}% of contribution`
+          : ""
+      }`,
     );
     return claimId;
   },
@@ -679,7 +807,9 @@ export const addClaimDocument = mutation({
     claimId: v.id("claims"),
     name: v.string(),
     mimeType: v.string(),
-    dataUrl: v.string(),
+    size: v.optional(v.number()),
+    storageId: v.optional(v.id("_storage")),
+    dataUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -692,13 +822,24 @@ export const addClaimDocument = mutation({
     const isOwner =
       member && user?.email && member.email === user.email.toLowerCase();
     if (!isAdmin && !isOwner) throw new Error("Not allowed");
-    if (args.dataUrl.length > 4_000_000)
-      throw new Error("File too large (max ~3MB)");
+    if (args.storageId) {
+      // Files are uploaded straight to Convex storage — enforce the 2MB
+      // limit server-side using the size reported by the upload.
+      if (args.size !== undefined && args.size > MAX_FILE_BYTES)
+        throw new Error("File too large (max 2MB)");
+    } else if (args.dataUrl) {
+      if (args.dataUrl.length > MAX_DATA_URL_CHARS)
+        throw new Error("File too large (max 2MB)");
+    } else {
+      throw new Error("No file content provided");
+    }
     await ctx.db.insert("claimDocuments", {
       claimId: args.claimId,
       name: args.name,
       mimeType: args.mimeType,
+      storageId: args.storageId,
       dataUrl: args.dataUrl,
+      size: args.size,
       uploadedAt: Date.now(),
       uploadedBy: userId,
     });
@@ -709,6 +850,13 @@ export const addClaimDocument = mutation({
       "claim.document_added",
       `${args.name} attached to claim by ${isAdmin ? "admin" : "member"}`,
     );
+  },
+});
+
+export const getClaimDocumentUrl = query({
+  args: { storageId: v.id("_storage") },
+  handler: async (ctx, args) => {
+    return await ctx.storage.getUrl(args.storageId);
   },
 });
 
@@ -764,5 +912,145 @@ export const adminReviewClaim = mutation({
       `claim.${args.decision}`,
       `Claim for GH¢${claim.amount.toFixed(2)} marked ${args.decision}`,
     );
+  },
+});
+
+// ---------- Events mutations ----------
+
+export const adminCreateEvent = mutation({
+  args: {
+    title: v.string(),
+    type: v.union(
+      v.literal("excursion"),
+      v.literal("funeral"),
+      v.literal("wedding"),
+      v.literal("other"),
+    ),
+    description: v.optional(v.string()),
+    location: v.optional(v.string()),
+    eventDate: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const { userId, user } = await requireAdmin(ctx);
+    const title = args.title.trim();
+    if (!title) throw new Error("Title is required");
+    if (!Number.isFinite(args.eventDate))
+      throw new Error("Invalid event date");
+    await ctx.db.insert("welfareEvents", {
+      title,
+      type: args.type,
+      description: args.description?.trim() || undefined,
+      location: args.location?.trim() || undefined,
+      eventDate: args.eventDate,
+      createdBy: userId,
+      createdAt: Date.now(),
+    });
+    await logActivity(
+      ctx,
+      userId,
+      user?.name,
+      "event.created",
+      `${title} (${args.type}) created`,
+    );
+  },
+});
+
+export const adminDeleteEvent = mutation({
+  args: { eventId: v.id("welfareEvents") },
+  handler: async (ctx, args) => {
+    const { userId, user } = await requireAdmin(ctx);
+    const event = await ctx.db.get(args.eventId);
+    if (!event) throw new Error("Event not found");
+    const regs = await ctx.db
+      .query("eventRegistrations")
+      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+      .collect();
+    for (const r of regs) {
+      await ctx.db.delete(r._id);
+    }
+    await ctx.db.delete(args.eventId);
+    await logActivity(
+      ctx,
+      userId,
+      user?.name,
+      "event.deleted",
+      `${event.title} deleted (with ${regs.length} registration(s))`,
+    );
+  },
+});
+
+export const registerForEvent = mutation({
+  args: { eventId: v.id("welfareEvents") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not signed in");
+    const user = await ctx.db.get(userId);
+    const email = user?.email ?? null;
+    if (!email) throw new Error("Sign in with your email to register for events");
+    const member = await ctx.db
+      .query("members")
+      .withIndex("by_email", (q) => q.eq("email", email.toLowerCase()))
+      .first();
+    if (!member) throw new Error("You are not registered as a member");
+    const event = await ctx.db.get(args.eventId);
+    if (!event) throw new Error("Event not found");
+
+    const existing = await ctx.db
+      .query("eventRegistrations")
+      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+      .collect();
+    if (existing.some((r) => r.memberId === member._id))
+      throw new Error("You have already registered for this event");
+
+    await ctx.db.insert("eventRegistrations", {
+      eventId: args.eventId,
+      memberId: member._id,
+      registeredAt: Date.now(),
+    });
+    await logActivity(
+      ctx,
+      userId,
+      user?.name,
+      "event.registered",
+      `${member.fullName} registered for ${event.title}`,
+    );
+  },
+});
+
+export const unregisterFromEvent = mutation({
+  args: { eventId: v.id("welfareEvents") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not signed in");
+    const user = await ctx.db.get(userId);
+    const email = user?.email ?? null;
+    if (!email) throw new Error("No email on account");
+    const member = await ctx.db
+      .query("members")
+      .withIndex("by_email", (q) => q.eq("email", email.toLowerCase()))
+      .first();
+    if (!member) throw new Error("You are not registered as a member");
+
+    const regs = await ctx.db
+      .query("eventRegistrations")
+      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+      .collect();
+    const mine = regs.find((r) => r.memberId === member._id);
+    if (!mine) throw new Error("You are not registered for this event");
+    await ctx.db.delete(mine._id);
+  },
+});
+
+/**
+ * Generates a short-lived upload URL for the Convex file store. The client
+ * POSTs the raw file to this URL (enforcing the 2MB limit), then records the
+ * returned storage id via addClaimDocument.
+ */
+export const generateUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not signed in");
+    return await ctx.storage.generateUploadUrl();
   },
 });

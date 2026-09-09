@@ -1,4 +1,5 @@
 import AdminClaims from "@/components/dashboard/AdminClaims";
+import AdminEvents from "@/components/dashboard/AdminEvents";
 import AdminMembers from "@/components/dashboard/AdminMembers";
 import AdminPackages from "@/components/dashboard/AdminPackages";
 import AdminReports from "@/components/dashboard/AdminReports";
@@ -7,12 +8,19 @@ import MemberBenefits from "@/components/dashboard/MemberBenefits";
 import MemberClaims from "@/components/dashboard/MemberClaims";
 import MemberOverview from "@/components/dashboard/MemberOverview";
 import MemberReports from "@/components/dashboard/MemberReports";
+import MemberEvents from "@/components/dashboard/MemberEvents";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/convex/_generated/api";
-import { HeartHandshake, Info, LayoutDashboard, LogOut, ShieldCheck } from "lucide-react";
+import {
+  HeartHandshake,
+  Info,
+  LayoutDashboard,
+  LogOut,
+  ShieldCheck,
+} from "lucide-react";
 import { useEffect } from "react";
 import { useMutation } from "convex/react";
 import { useNavigate } from "react-router";
@@ -20,6 +28,7 @@ import { useNavigate } from "react-router";
 const MEMBER_TABS = [
   { value: "overview", label: "Overview" },
   { value: "benefits", label: "Benefits" },
+  { value: "events", label: "Events" },
   { value: "claims", label: "My claims" },
   { value: "reports", label: "My reports" },
 ];
@@ -28,6 +37,7 @@ const ADMIN_TABS = [
   { value: "reports", label: "Reports" },
   { value: "members", label: "Members" },
   { value: "claims", label: "Claims" },
+  { value: "events", label: "Events" },
   { value: "packages", label: "Benefit packages" },
   { value: "users", label: "Users" },
 ];
@@ -69,7 +79,7 @@ export default function Dashboard() {
               <HeartHandshake className="size-4.5" strokeWidth={2.2} />
             </div>
             <span className="text-[15px] font-semibold tracking-tight">
-              Welfare<span className="text-primary">Fund</span>
+              KGH Staff <span className="text-primary">Welfare</span>
             </span>
             {isAdmin && (
               <Badge className="ml-1 gap-1 bg-primary/10 text-primary hover:bg-primary/10">
@@ -158,6 +168,9 @@ export default function Dashboard() {
               <TabsContent value="claims">
                 <AdminClaims />
               </TabsContent>
+              <TabsContent value="events">
+                <AdminEvents />
+              </TabsContent>
               <TabsContent value="packages">
                 <AdminPackages />
               </TabsContent>
@@ -172,6 +185,9 @@ export default function Dashboard() {
               </TabsContent>
               <TabsContent value="benefits">
                 <MemberBenefits />
+              </TabsContent>
+              <TabsContent value="events">
+                <MemberEvents />
               </TabsContent>
               <TabsContent value="claims">
                 <MemberClaims />

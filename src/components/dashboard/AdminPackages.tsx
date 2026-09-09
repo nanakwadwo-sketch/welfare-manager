@@ -20,6 +20,7 @@ const PACKAGE_ORDER = [
   "death_parent",
   "death_spouse",
   "death_child",
+  "wedding",
   "retirement",
   "transfer",
   "resignation",
@@ -124,6 +125,11 @@ export default function AdminPackages() {
         <p className="text-sm text-muted-foreground">
           Amounts can change at any time — new claims use the updated values
           immediately.
+        </p>
+        <p className="mt-2 max-w-2xl rounded-lg border border-border/70 bg-secondary/50 px-3 py-2 text-xs text-muted-foreground">
+          Repeat-beneficiary rule: apart from wedding, funeral, and retirement
+          claims, members who have already been paid a benefit receive 60% of
+          their total contribution instead of the fixed amount.
         </p>
       </div>
 

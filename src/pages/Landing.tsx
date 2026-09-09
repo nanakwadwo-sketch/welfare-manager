@@ -28,6 +28,7 @@ const BENEFITS = [
   { label: "Death of a parent", amount: "GH¢500" },
   { label: "Death of a spouse", amount: "GH¢1,000" },
   { label: "Death of a child", amount: "GH¢1,000" },
+  { label: "Wedding benefit", amount: "GH¢500" },
   { label: "Exit benefits", amount: "70% payout" },
 ];
 
@@ -79,7 +80,7 @@ export default function Landing() {
               <HeartHandshake className="size-4.5" strokeWidth={2.2} />
             </div>
             <span className="text-[15px] font-semibold tracking-tight">
-              Welfare<span className="text-primary">Fund</span>
+              KGH Staff <span className="text-primary">Welfare</span>
             </span>
           </div>
           <nav className="hidden items-center gap-8 text-sm font-medium text-muted-foreground md:flex">
@@ -162,9 +163,9 @@ export default function Landing() {
             transition={{ duration: 0.55, delay: 0.16 }}
             className="mt-5 max-w-xl text-pretty text-base leading-7 text-muted-foreground sm:text-lg sm:leading-8"
           >
-            WelfareFund keeps monthly dues, maturity, and benefit claims in one
-            clean system — so when life happens, support arrives without the
-            paperwork scramble.
+            KGH Staff Welfare keeps monthly dues, maturity, and benefit claims
+            in one clean system — so when life happens, support arrives without
+            the paperwork scramble.
           </motion.p>
 
           <motion.div
@@ -221,7 +222,7 @@ export default function Landing() {
           </p>
         </motion.div>
 
-        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           {BENEFITS.map((b, i) => (
             <motion.div
               key={b.label}
@@ -242,10 +243,10 @@ export default function Landing() {
               </Card>
             </motion.div>
           ))}
-        </div>
-        <p className="mt-4 text-center text-xs text-muted-foreground">
-          Exit benefits — retirement, transfer, and resignation — pay 70% of your
-          total contribution.
+        </div>        <p className="mt-4 text-center text-xs text-muted-foreground">
+          Exit benefits — retirement, transfer, and resignation — pay 70% of
+          your total contribution. Repeat beneficiaries on other benefit types
+          receive 60% of their total contribution.
         </p>
       </section>
 
@@ -338,7 +339,7 @@ export default function Landing() {
             <div className="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary">
               <HeartHandshake className="size-3.5" />
             </div>
-            <span className="font-medium text-foreground/80">WelfareFund</span>
+            <span className="font-medium text-foreground/80">KGH Staff Welfare</span>
           </div>
           <p>Monthly dues · 6-month maturity · Documented claims</p>
         </div>
