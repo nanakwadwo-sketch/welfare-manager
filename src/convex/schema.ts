@@ -49,6 +49,7 @@ const schema = defineSchema(
         v.literal("inactive"),
         v.literal("terminated"),
       ),
+      profilePicStorageId: v.optional(v.id("_storage")), // uploaded by the member
       totalContributed: v.number(), // cumulative GH¢ paid
     })
       .index("by_email", ["email"])

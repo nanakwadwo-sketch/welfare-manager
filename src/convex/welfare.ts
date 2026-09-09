@@ -1054,3 +1054,100 @@ export const generateUploadUrl = mutation({
     return await ctx.storage.generateUploadUrl();
   },
 });
+
+// ---------- Member profile picture ----------
+
+/**
+ * The signed-in member sets their profile picture. The client first POSTs the
+ * image to a generated upload URL, then passes the returned storage id here.
+ * Images only, max 2MB. Replaces (and deletes) any previous picture.
+ */
+export const setMyProfilePicture = mutation({
+  args: { storageId: v.id("_storage") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not signed in");
+    const user = await ctx.db.get(userId);
+    const email = user?.email ?? null;
+    if (!email) throw new Error("Sign in with your email to upload a profile picture");
+    const member = await ctx.db
+      .query("members")
+      .withIndex("by_email", (q) => q.eq("email", email.toLowerCase()))
+      .first();
+    if (!member) throw new Error("Only registered members can upload a profile picture");
+
+    // Validate: image type and size are reported by the storage metadata.
+    const metadata = await ctx.db.system.get(args.storageId);
+    if (!metadata) throw new Error("Upload not found — try again");
+    const mime = metadata.contentType ?? "";
+    if (!mime.startsWith("image/")) {
+      await ctx.storage.delete(args.storageId);
+      throw new Error("Profile picture must be an image (JPG or PNG)");
+    }
+    const size = metadata.size ?? 0;
+    if (size > MAX_FILE_BYTES) {
+      await ctx.storage.delete(args.storageId);
+      throw new Error("Profile picture must be 2MB or smaller");
+    }
+
+    // Remove the old picture so storage doesn't accumulate orphans.
+    if (member.profilePicStorageId) {
+      try {
+        await ctx.storage.delete(member.profilePicStorageId);
+      } catch {
+        // Old file may already be gone — safe to continue.
+      }
+    }
+
+    await ctx.db.patch(member._id, { profilePicStorageId: args.storageId });
+    await logActivity(ctx, userId, user?.name, "member.profile_picture_updated", `${member.fullName} updated their profile picture`);
+  },
+});
+
+/** Removes the signed-in member's profile picture. */
+export const removeMyProfilePicture = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not signed in");
+    const user = await ctx.db.get(userId);
+    const email = user?.email ?? null;
+    if (!email) throw new Error("Not signed in with email");
+    const member = await ctx.db
+      .query("members")
+      .withIndex("by_email", (q) => q.eq("email", email.toLowerCase()))
+      .first();
+    if (!member) throw new Error("Only registered members can edit their profile");
+    if (member.profilePicStorageId) {
+      try {
+        await ctx.storage.delete(member.profilePicStorageId);
+      } catch {
+        // Already gone — fine.
+      }
+      await ctx.db.patch(member._id, { profilePicStorageId: undefined });
+    }
+  },
+});
+
+/** Read-only URL for a member's profile picture (admin or the member themself). */
+export const getProfilePictureUrl = query({
+  args: { storageId: v.id("_storage") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return null;
+    const user = await ctx.db.get(userId);
+    if (!user) return null;
+    if (user.role === "admin") return await ctx.storage.getUrl(args.storageId);
+    // Members may only read their own picture.
+    const email = user.email ?? null;
+    if (!email) return null;
+    const member = await ctx.db
+      .query("members")
+      .withIndex("by_email", (q) => q.eq("email", email.toLowerCase()))
+      .first();
+    if (member && member.profilePicStorageId === args.storageId) {
+      return await ctx.storage.getUrl(args.storageId);
+    }
+    return null;
+  },
+});

@@ -1,4 +1,4 @@
-import { EmptyState, MemberStatusBadge, MaturityProgress } from "@/components/dashboard/shared";
+import { EmptyState, MemberAvatar, MemberStatusBadge, MaturityProgress } from "@/components/dashboard/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -56,6 +56,7 @@ type MemberRow = {
   department?: string;
   joinedAt: number;
   status: "active" | "inactive" | "terminated";
+  profilePicStorageId?: Id<"_storage">;
   totalPaid: number;
   paymentCount: number;
   maturity: {
@@ -157,9 +158,14 @@ export default function AdminMembers() {
                 {filtered.map((m) => (
                   <TableRow key={m._id}>
                     <TableCell>
-                      <div className="font-medium">{m.fullName}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {m.memberCode} · {m.email}
+                      <div className="flex items-center gap-3">
+                        <MemberAvatar fullName={m.fullName} storageId={m.profilePicStorageId} size={40} />
+                        <div className="min-w-0">
+                          <div className="truncate font-medium">{m.fullName}</div>
+                          <div className="truncate text-xs text-muted-foreground">
+                            {m.memberCode} · {m.email}
+                          </div>
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell className="hidden font-mono text-xs text-muted-foreground md:table-cell">

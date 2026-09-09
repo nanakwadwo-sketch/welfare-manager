@@ -206,6 +206,91 @@ export function MaturityProgress({
   );
 }
 
+// ---------- Member avatar / profile picture ----------
+
+/**
+ * Circular profile picture for a member. Renders the stored image when one is
+ * uploaded, otherwise falls back to initials on a soft background.
+ * Clicking (when editable) opens the file picker; the caller handles upload.
+ */
+export function MemberAvatar({
+  fullName,
+  storageId,
+  size = 56,
+  editable,
+  uploading,
+  onPick,
+  className,
+}: {
+  fullName: string;
+  storageId?: Id<"_storage">;
+  size?: number;
+  editable?: boolean;
+  uploading?: boolean;
+  onPick?: () => void;
+  className?: string;
+}) {
+  const url = useQuery(
+    api.welfare.getProfilePictureUrl,
+    storageId ? ({ storageId } as any) : "skip",
+  );
+  const initials = fullName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join("");
+
+  const inner = (
+    <>
+      {url ? (
+        <img
+          src={url}
+          alt={fullName}
+          className="size-full rounded-full object-cover"
+        />
+      ) : (
+        <span
+          className="font-semibold text-primary"
+          style={{ fontSize: Math.max(12, Math.round(size * 0.32)) }}
+        >
+          {initials || "?"}
+        </span>
+      )}
+      {uploading && (
+        <span className="absolute inset-0 flex items-center justify-center rounded-full bg-background/70">
+          <Loader2 className="size-4 animate-spin text-muted-foreground" />
+        </span>
+      )}
+    </>
+  );
+
+  const base = cn(
+    "relative flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/70 bg-secondary/70",
+    editable && "cursor-pointer ring-primary/40 transition-shadow hover:ring-2",
+    className,
+  );
+
+  if (editable) {
+    return (
+      <button
+        type="button"
+        title="Upload profile picture"
+        onClick={onPick}
+        className={base}
+        style={{ width: size, height: size }}
+      >
+        {inner}
+      </button>
+    );
+  }
+  return (
+    <div className={base} style={{ width: size, height: size }}>
+      {inner}
+    </div>
+  );
+}
+
 // ---------- Empty state ----------
 
 export function EmptyState({
