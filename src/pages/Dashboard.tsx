@@ -9,6 +9,7 @@ import MemberClaims from "@/components/dashboard/MemberClaims";
 import MemberOverview from "@/components/dashboard/MemberOverview";
 import MemberReports from "@/components/dashboard/MemberReports";
 import MemberEvents from "@/components/dashboard/MemberEvents";
+import { MemberAvatar } from "@/components/dashboard/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -22,7 +23,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useEffect } from "react";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { useNavigate } from "react-router";
 
 const MEMBER_TABS = [
@@ -54,6 +55,8 @@ export default function Dashboard() {
 
   const isAdmin = user?.role === "admin";
   const isGuest = user?.isAnonymous === true;
+  const myProfile = useQuery(api.welfare.getMyMemberProfile);
+  const memberName = myProfile?.fullName ?? user?.name ?? user?.email ?? "Account";
   const tabs = isAdmin ? ADMIN_TABS : MEMBER_TABS;
   const defaultTab = isAdmin ? "reports" : "overview";
 
@@ -91,12 +94,19 @@ export default function Dashboard() {
           <div className="flex items-center gap-2">
             <div className="hidden text-right sm:block">
               <p className="text-sm font-medium leading-tight">
-                {isGuest ? "Guest" : user?.name ?? user?.email ?? "Account"}
+                {isGuest ? "Guest" : memberName}
               </p>
               <p className="text-xs leading-tight text-muted-foreground">
                 {user?.email ?? "Not linked to an email"}
               </p>
             </div>
+            {!isGuest && (
+              <MemberAvatar
+                fullName={myProfile?.fullName ?? user?.name ?? memberName}
+                storageId={myProfile?.profilePicStorageId}
+                size={32}
+              />
+            )}
             <Button
               type="button"
               variant="outline"
