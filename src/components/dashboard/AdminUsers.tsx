@@ -40,7 +40,6 @@ type UserRow = {
   name?: string;
   email?: string;
   role?: "admin" | "user" | "member";
-  isAnonymous?: boolean;
   memberCode?: string;
   memberStatus?: "active" | "inactive" | "terminated";
   memberProfilePic?: Id<"_storage">;

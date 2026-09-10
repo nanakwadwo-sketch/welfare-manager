@@ -287,7 +287,6 @@ export const adminListUsers = query({
           name: u.name,
           email: u.email,
           role: u.role,
-          isAnonymous: u.isAnonymous,
           memberId: linked?._id,
           memberCode: linked?.memberCode,
           memberStatus: linked?.status,
