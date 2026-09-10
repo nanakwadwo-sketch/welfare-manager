@@ -1,3 +1,4 @@
+import { MemberAvatar } from "@/components/dashboard/shared";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -30,6 +31,7 @@ type UserRow = {
   isAnonymous?: boolean;
   memberCode?: string;
   memberStatus?: "active" | "inactive" | "terminated";
+  memberProfilePic?: Id<"_storage">;
 };
 
 const ROLE_STYLES: Record<string, string> = {
@@ -96,13 +98,21 @@ export default function AdminUsers() {
                   <TableRow key={u._id}>
                     <TableCell>
                       <div className="flex items-center gap-2.5">
-                        <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
-                          {u.role === "admin" ? (
-                            <ShieldCheck className="size-4" />
-                          ) : (
-                            <UserRound className="size-4" />
-                          )}
-                        </div>
+                        {u.memberProfilePic ? (
+                          <MemberAvatar
+                            fullName={u.name ?? u.email ?? "Member"}
+                            storageId={u.memberProfilePic}
+                            size={32}
+                          />
+                        ) : (
+                          <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
+                            {u.role === "admin" ? (
+                              <ShieldCheck className="size-4" />
+                            ) : (
+                              <UserRound className="size-4" />
+                            )}
+                          </div>
+                        )}
                         <div className="min-w-0">
                           <div className="truncate font-medium">
                             {u.name ?? u.email ?? "Anonymous user"}

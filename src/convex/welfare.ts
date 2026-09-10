@@ -255,6 +255,9 @@ export const adminListUsers = query({
         isAnonymous: u.isAnonymous,
         memberCode: u.email ? memberByEmail.get(u.email.toLowerCase())?.memberCode : undefined,
         memberStatus: u.email ? memberByEmail.get(u.email.toLowerCase())?.status : undefined,
+        memberProfilePic: u.email
+          ? memberByEmail.get(u.email.toLowerCase())?.profilePicStorageId
+          : undefined,
       }))
       .sort((a, b) => (a.name ?? a.email ?? "").localeCompare(b.name ?? b.email ?? ""));
   },
