@@ -247,18 +247,20 @@ export const adminListUsers = query({
     const members = await ctx.db.query("members").collect();
     const memberByEmail = new Map(members.map((m) => [m.email, m]));
     return users
-      .map((u) => ({
-        _id: u._id,
-        name: u.name,
-        email: u.email,
-        role: u.role,
-        isAnonymous: u.isAnonymous,
-        memberCode: u.email ? memberByEmail.get(u.email.toLowerCase())?.memberCode : undefined,
-        memberStatus: u.email ? memberByEmail.get(u.email.toLowerCase())?.status : undefined,
-        memberProfilePic: u.email
-          ? memberByEmail.get(u.email.toLowerCase())?.profilePicStorageId
-          : undefined,
-      }))
+      .map((u) => {
+        const linked = u.email ? memberByEmail.get(u.email.toLowerCase()) : undefined;
+        return {
+          _id: u._id,
+          name: u.name,
+          email: u.email,
+          role: u.role,
+          isAnonymous: u.isAnonymous,
+          memberId: linked?._id,
+          memberCode: linked?.memberCode,
+          memberStatus: linked?.status,
+          memberProfilePic: linked?.profilePicStorageId,
+        };
+      })
       .sort((a, b) => (a.name ?? a.email ?? "").localeCompare(b.name ?? b.email ?? ""));
   },
 });
@@ -581,6 +583,7 @@ export const adminUpdateMember = mutation({
     staffId: v.optional(v.string()),
     phone: v.optional(v.string()),
     department: v.optional(v.string()),
+    joinedAt: v.optional(v.number()),
     status: v.optional(
       v.union(
         v.literal("active"),
@@ -601,15 +604,26 @@ export const adminUpdateMember = mutation({
     if (args.department !== undefined)
       patch.department = args.department.trim() || undefined;
     if (args.status !== undefined) patch.status = args.status;
+    if (args.joinedAt !== undefined) {
+      // Sanity checks: join date must be a plausible past date.
+      if (
+        !Number.isFinite(args.joinedAt) ||
+        args.joinedAt > Date.now() + 24 * 60 * 60 * 1000 ||
+        args.joinedAt < new Date("1950-01-01").getTime()
+      ) {
+        throw new Error("Join date must be a valid date (not in the future)");
+      }
+      patch.joinedAt = args.joinedAt;
+    }
     if (Object.keys(patch).length === 0) return;
     await ctx.db.patch(args.memberId, patch);
-    await logActivity(
-      ctx,
-      userId,
-      user?.name,
-      "member.updated",
-      `${member.fullName} (${member.memberCode}) updated`,
-    );
+    const detail =
+      patch.joinedAt !== undefined && patch.joinedAt !== member.joinedAt
+        ? `${member.fullName} (${member.memberCode}) updated — join date moved to ${new Date(
+            patch.joinedAt as number,
+          ).toISOString().slice(0, 10)}, which affects maturity`
+        : `${member.fullName} (${member.memberCode}) updated`;
+    await logActivity(ctx, userId, user?.name, "member.updated", detail);
   },
 });
 
@@ -651,6 +665,117 @@ export const adminRecordDues = mutation({
       user?.name,
       "dues.recorded",
       `GH¢${args.amount.toFixed(2)} for ${member.fullName} (${args.periodMonth})`,
+    );
+  },
+});
+
+/**
+ * Permanently deletes a member and ALL of their welfare data: dues payments,
+ * claims with their supporting documents (and the stored files), event
+ * registrations, profile picture, plus their linked sign-in account and
+ * sessions. There is no undo. The activity log entry survives deletion so
+ * the audit trail still shows who was removed and by whom.
+ */
+export const adminDeleteMember = mutation({
+  args: { memberId: v.id("members") },
+  handler: async (ctx, args) => {
+    const { userId, user } = await requireAdmin(ctx);
+    const member = await ctx.db.get(args.memberId);
+    if (!member) throw new Error("Member not found");
+
+    // Dues payments.
+    for (const payment of await ctx.db
+      .query("duesPayments")
+      .withIndex("by_member", (q) => q.eq("memberId", member._id))
+      .collect()) {
+      await ctx.db.delete(payment._id);
+    }
+
+    // Claims and their documents (including stored files).
+    const docs = new Set<string>();
+    for (const claim of await ctx.db
+      .query("claims")
+      .withIndex("by_member", (q) => q.eq("memberId", member._id))
+      .collect()) {
+      for (const doc of await ctx.db
+        .query("claimDocuments")
+        .withIndex("by_claim", (q) => q.eq("claimId", claim._id))
+        .collect()) {
+        if (doc.storageId) docs.add(doc.storageId);
+        await ctx.db.delete(doc._id);
+      }
+      await ctx.db.delete(claim._id);
+    }
+    for (const storageId of docs) {
+      try {
+        await ctx.storage.delete(storageId as any);
+      } catch {
+        // File may already be gone — continue.
+      }
+    }
+
+    // Event registrations.
+    for (const reg of await ctx.db
+      .query("eventRegistrations")
+      .withIndex("by_member", (q) => q.eq("memberId", member._id))
+      .collect()) {
+      await ctx.db.delete(reg._id);
+    }
+
+    // Profile picture.
+    if (member.profilePicStorageId) {
+      try {
+        await ctx.storage.delete(member.profilePicStorageId);
+      } catch {
+        // Already gone.
+      }
+    }
+
+    // Linked sign-in account (if any): sessions, refresh tokens, accounts,
+    // verification codes, then the user record itself.
+    if (member.userId) {
+      const linkedUserId = member.userId;
+      if (linkedUserId === userId) {
+        throw new Error("You cannot delete your own account");
+      }
+      for (const session of await ctx.db
+        .query("authSessions")
+        .withIndex("userId", (q) => q.eq("userId", linkedUserId))
+        .collect()) {
+        for (const token of await ctx.db
+          .query("authRefreshTokens")
+          .withIndex("sessionId", (q) => q.eq("sessionId", session._id))
+          .collect()) {
+          await ctx.db.delete(token._id);
+        }
+        await ctx.db.delete(session._id);
+      }
+      for (const account of await ctx.db
+        .query("authAccounts")
+        .withIndex("userIdAndProvider", (q) =>
+          q.eq("userId", linkedUserId),
+        )
+        .collect()) {
+        for (const code of await ctx.db
+          .query("authVerificationCodes")
+          .withIndex("accountId", (q) => q.eq("accountId", account._id))
+          .collect()) {
+          await ctx.db.delete(code._id);
+        }
+        await ctx.db.delete(account._id);
+      }
+      await ctx.db.delete(linkedUserId);
+    }
+
+    // Finally, the member record itself.
+    await ctx.db.delete(member._id);
+
+    await logActivity(
+      ctx,
+      userId,
+      user?.name,
+      "member.deleted",
+      `${member.fullName} (${member.memberCode}) deleted permanently with all dues, claims, and their sign-in account`,
     );
   },
 });

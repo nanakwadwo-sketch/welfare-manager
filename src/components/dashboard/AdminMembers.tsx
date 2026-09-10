@@ -588,6 +588,7 @@ function EditMemberDialog({
   const [staffId, setStaffId] = useState("");
   const [phone, setPhone] = useState("");
   const [department, setDepartment] = useState("");
+  const [joinedAt, setJoinedAt] = useState("");
   const [status, setStatus] = useState<string>("active");
   const [saving, setSaving] = useState(false);
   const [initializedFor, setInitializedFor] = useState<Id<"members"> | null>(null);
@@ -597,6 +598,7 @@ function EditMemberDialog({
     setStaffId(member.staffId ?? "");
     setPhone(member.phone ?? "");
     setDepartment(member.department ?? "");
+    setJoinedAt(new Date(member.joinedAt).toISOString().slice(0, 10));
     setStatus(member.status);
     setInitializedFor(member._id);
   }
@@ -611,6 +613,7 @@ function EditMemberDialog({
         staffId,
         phone: phone || undefined,
         department: department || undefined,
+        joinedAt: joinedAt ? new Date(`${joinedAt}T00:00:00`).getTime() : member.joinedAt,
         status: status as MemberRow["status"],
       });
       toast.success("Member updated");
@@ -652,18 +655,33 @@ function EditMemberDialog({
                 <Label htmlFor="edit-dept">Department</Label>
                 <Input id="edit-dept" value={department} onChange={(e) => setDepartment(e.target.value)} />
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="edit-status">Status</Label>
-                <Select value={status} onValueChange={setStatus}>
-                  <SelectTrigger id="edit-status" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="inactive">Inactive</SelectItem>
-                    <SelectItem value="terminated">Terminated</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-joined">Join date</Label>
+                  <Input
+                    id="edit-joined"
+                    type="date"
+                    max={new Date().toISOString().slice(0, 10)}
+                    value={joinedAt}
+                    onChange={(e) => setJoinedAt(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Changing this recalculates the 6-month maturity date.
+                  </p>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-status">Status</Label>
+                  <Select value={status} onValueChange={setStatus}>
+                    <SelectTrigger id="edit-status" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                      <SelectItem value="terminated">Terminated</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
             <div className="rounded-lg border border-border/70 p-3">

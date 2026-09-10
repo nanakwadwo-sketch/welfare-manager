@@ -1,5 +1,17 @@
 import { MemberAvatar } from "@/components/dashboard/shared";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
@@ -19,7 +31,7 @@ import {
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useMutation, useQuery } from "convex/react";
-import { Loader2, ShieldCheck, UserRound, Users } from "lucide-react";
+import { Loader2, ShieldCheck, Trash2, UserRound, Users } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -32,6 +44,7 @@ type UserRow = {
   memberCode?: string;
   memberStatus?: "active" | "inactive" | "terminated";
   memberProfilePic?: Id<"_storage">;
+  memberId?: Id<"members">;
 };
 
 const ROLE_STYLES: Record<string, string> = {
@@ -43,7 +56,9 @@ const ROLE_STYLES: Record<string, string> = {
 export default function AdminUsers() {
   const users = useQuery(api.welfare.adminListUsers);
   const setRole = useMutation(api.welfare.adminSetUserRole);
+  const deleteMember = useMutation(api.welfare.adminDeleteMember);
   const [savingId, setSavingId] = useState<Id<"users"> | null>(null);
+  const [deletingId, setDeletingId] = useState<Id<"users"> | null>(null);
 
   const handleRole = async (u: UserRow, role: string) => {
     setSavingId(u._id);
@@ -59,6 +74,19 @@ export default function AdminUsers() {
       toast.error(err instanceof Error ? err.message : "Could not change role");
     } finally {
       setSavingId(null);
+    }
+  };
+
+  const handleDeleteMember = async (u: UserRow) => {
+    if (!u.memberId) return;
+    setDeletingId(u._id);
+    try {
+      await deleteMember({ memberId: u.memberId });
+      toast.success(`${u.name ?? u.email ?? "Member"} deleted from the system`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -166,6 +194,52 @@ export default function AdminUsers() {
                             <SelectItem value="user">User</SelectItem>
                           </SelectContent>
                         </Select>
+                        {u.memberId && u.role !== "admin" && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                className="size-8 border-red-500/30 text-red-600 hover:bg-red-500/10 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                                title="Delete this member and all their data"
+                                disabled={deletingId === u._id}
+                              >
+                                {deletingId === u._id ? (
+                                  <Loader2 className="size-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="size-4" />
+                                )}
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>
+                                  Delete {u.name ?? u.email} permanently?
+                                </AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This removes the member {u.memberCode ? `(${u.memberCode}) ` : ""}and
+                                  ALL their data from the system — dues payments, claims and their
+                                  supporting documents, event registrations, and their sign-in
+                                  account. This cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  className="bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500/40"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    void handleDeleteMember(u);
+                                  }}
+                                >
+                                  <Trash2 className="mr-2 size-4" />
+                                  Delete permanently
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
