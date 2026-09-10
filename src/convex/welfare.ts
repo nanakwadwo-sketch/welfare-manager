@@ -432,18 +432,12 @@ export const bootstrapWelfare = mutation({
   handler: async (ctx) => {
     const packages = await ctx.db.query("benefitPackages").collect();
     const now = Date.now();
-    if (packages.length === 0) {
-      for (const pkg of DEFAULT_PACKAGES) {
+    // Seed default packages, backfilling keys added in later app versions
+    // (e.g. wedding) so existing deployments pick up new benefits.
+    const present = new Set(packages.map((p) => p.key));
+    for (const pkg of DEFAULT_PACKAGES) {
+      if (!present.has(pkg.key)) {
         await ctx.db.insert("benefitPackages", { ...pkg, updatedAt: now });
-      }
-    } else {
-      // Backfill: seed any default package key that does not exist yet so
-      // existing deployments pick up newly added benefits (e.g. wedding).
-      const present = new Set(packages.map((p) => p.key));
-      for (const pkg of DEFAULT_PACKAGES) {
-        if (!present.has(pkg.key)) {
-          await ctx.db.insert("benefitPackages", { ...pkg, updatedAt: now });
-        }
       }
     }
 
@@ -466,6 +460,24 @@ export const bootstrapWelfare = mutation({
             "admin.bootstrapped",
             `First admin: ${user.name ?? user.email}`,
           );
+        }
+      }
+    }
+
+    // Link the signed-in account to its member record (once), so admins can
+    // delete a member together with their sign-in account and the member
+    // dashboard can resolve the signed-in member directly.
+    const linkUserId = await getAuthUserId(ctx);
+    if (linkUserId) {
+      const linkUser = await ctx.db.get(linkUserId);
+      const linkEmail = linkUser?.email?.toLowerCase();
+      if (linkEmail) {
+        const member = await ctx.db
+          .query("members")
+          .withIndex("by_email", (q) => q.eq("email", linkEmail))
+          .first();
+        if (member && member.userId !== linkUserId) {
+          await ctx.db.patch(member._id, { userId: linkUserId });
         }
       }
     }
@@ -732,9 +744,20 @@ export const adminDeleteMember = mutation({
     }
 
     // Linked sign-in account (if any): sessions, refresh tokens, accounts,
-    // verification codes, then the user record itself.
-    if (member.userId) {
-      const linkedUserId = member.userId;
+    // verification codes, then the user record itself. Resolve the account
+    // via member.userId first, then fall back to matching by email so a
+    // member is never left with an orphaned sign-in account.
+    const linkedUserId =
+      member.userId ??
+      (member.email
+        ? (
+            await ctx.db
+              .query("users")
+              .withIndex("email", (q) => q.eq("email", member.email))
+              .first()
+          )?._id
+        : undefined);
+    if (linkedUserId) {
       if (linkedUserId === userId) {
         throw new Error("You cannot delete your own account");
       }
