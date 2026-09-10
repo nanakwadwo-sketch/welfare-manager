@@ -17,7 +17,6 @@ import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/convex/_generated/api";
 import {
   HeartHandshake,
-  Info,
   LayoutDashboard,
   LogOut,
   ShieldCheck,
@@ -54,7 +53,6 @@ export default function Dashboard() {
   }, [bootstrap]);
 
   const isAdmin = user?.role === "admin";
-  const isGuest = user?.isAnonymous === true;
   const myProfile = useQuery(api.welfare.getMyMemberProfile);
   const memberName = myProfile?.fullName ?? user?.name ?? user?.email ?? "Account";
   const tabs = isAdmin ? ADMIN_TABS : MEMBER_TABS;
@@ -93,20 +91,16 @@ export default function Dashboard() {
           </div>
           <div className="flex items-center gap-2">
             <div className="hidden text-right sm:block">
-              <p className="text-sm font-medium leading-tight">
-                {isGuest ? "Guest" : memberName}
-              </p>
+              <p className="text-sm font-medium leading-tight">{memberName}</p>
               <p className="text-xs leading-tight text-muted-foreground">
                 {user?.email ?? "Not linked to an email"}
               </p>
             </div>
-            {!isGuest && (
-              <MemberAvatar
-                fullName={myProfile?.fullName ?? user?.name ?? memberName}
-                storageId={myProfile?.profilePicStorageId}
-                size={32}
-              />
-            )}
+            <MemberAvatar
+              fullName={myProfile?.fullName ?? user?.name ?? memberName}
+              storageId={myProfile?.profilePicStorageId}
+              size={32}
+            />
             <Button
               type="button"
               variant="outline"
@@ -130,29 +124,6 @@ export default function Dashboard() {
               : "Your membership workspace"}
           </span>
         </div>
-
-        {isGuest && (
-          <div className="mb-6 flex flex-col gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-2.5">
-              <Info className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-400" />
-              <p className="text-sm text-amber-800 dark:text-amber-300">
-                You are browsing as a guest. Sign in with your email to link
-                your membership — guest accounts cannot hold data or become
-                admins.
-              </p>
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              className="shrink-0 gap-2 border-amber-500/40"
-              onClick={() => {
-                void signOut().then(() => navigate("/auth"));
-              }}
-            >
-              Sign in with email
-            </Button>
-          </div>
-        )}
 
         <Tabs defaultValue={defaultTab} className="gap-6">
           <TabsList className="h-auto w-full justify-start overflow-x-auto rounded-lg bg-secondary/60 p-1 sm:w-auto">
@@ -209,13 +180,19 @@ export default function Dashboard() {
           )}
         </Tabs>
 
-        {!isAdmin && !isGuest && (
+        {!isAdmin && (
           <p className="mt-10 rounded-lg border border-border/70 bg-card/60 px-4 py-3 text-sm text-muted-foreground">
             Not registered as a member yet? The fund admin adds members by
             email — ask them to add <span className="font-medium text-foreground">{user?.email}</span>{" "}
             so your membership appears here.
           </p>
         )}
+
+        <footer className="mt-12 border-t border-border/70 py-5">
+          <p className="text-center text-sm text-muted-foreground">
+            System developed by: Richard Osei
+          </p>
+        </footer>
       </div>
     </main>
   );

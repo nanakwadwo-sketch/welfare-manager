@@ -104,6 +104,39 @@ function memberMaturity(member: { joinedAt: number }, now: number) {
   return maturityInfo(member.joinedAt, now);
 }
 
+/**
+ * Remove a sign-in account entirely: sessions, refresh tokens, auth provider
+ * accounts, verification codes, then the users row itself. Safe on already-
+ * deleted ids.
+ */
+async function purgeAuthAccount(ctx: any, targetUserId: string) {
+  for (const session of await ctx.db
+    .query("authSessions")
+    .withIndex("userId", (q: any) => q.eq("userId", targetUserId))
+    .collect()) {
+    for (const token of await ctx.db
+      .query("authRefreshTokens")
+      .withIndex("sessionId", (q: any) => q.eq("sessionId", session._id))
+      .collect()) {
+      await ctx.db.delete(token._id);
+    }
+    await ctx.db.delete(session._id);
+  }
+  for (const account of await ctx.db
+    .query("authAccounts")
+    .withIndex("userIdAndProvider", (q: any) => q.eq("userId", targetUserId))
+    .collect()) {
+    for (const code of await ctx.db
+      .query("authVerificationCodes")
+      .withIndex("accountId", (q: any) => q.eq("accountId", account._id))
+      .collect()) {
+      await ctx.db.delete(code._id);
+    }
+    await ctx.db.delete(account._id);
+  }
+  await ctx.db.delete(targetUserId);
+}
+
 // ---------- Queries ----------
 
 export const getMyMemberProfile = query({
@@ -481,6 +514,21 @@ export const bootstrapWelfare = mutation({
         }
       }
     }
+
+    // Guest (anonymous) accounts are no longer part of the system: every load
+    // sweeps the users table and removes any leftover anonymous rows together
+    // with their sessions and auth records. Idempotent — no-op once clean.
+    const anonymous = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("isAnonymous"), true))
+      .collect();
+    for (const anon of anonymous) {
+      try {
+        await purgeAuthAccount(ctx, anon._id);
+      } catch {
+        // The row may have been removed concurrently — keep sweeping.
+      }
+    }
   },
 });
 
@@ -761,33 +809,7 @@ export const adminDeleteMember = mutation({
       if (linkedUserId === userId) {
         throw new Error("You cannot delete your own account");
       }
-      for (const session of await ctx.db
-        .query("authSessions")
-        .withIndex("userId", (q) => q.eq("userId", linkedUserId))
-        .collect()) {
-        for (const token of await ctx.db
-          .query("authRefreshTokens")
-          .withIndex("sessionId", (q) => q.eq("sessionId", session._id))
-          .collect()) {
-          await ctx.db.delete(token._id);
-        }
-        await ctx.db.delete(session._id);
-      }
-      for (const account of await ctx.db
-        .query("authAccounts")
-        .withIndex("userIdAndProvider", (q) =>
-          q.eq("userId", linkedUserId),
-        )
-        .collect()) {
-        for (const code of await ctx.db
-          .query("authVerificationCodes")
-          .withIndex("accountId", (q) => q.eq("accountId", account._id))
-          .collect()) {
-          await ctx.db.delete(code._id);
-        }
-        await ctx.db.delete(account._id);
-      }
-      await ctx.db.delete(linkedUserId);
+      await purgeAuthAccount(ctx, linkedUserId);
     }
 
     // Finally, the member record itself.

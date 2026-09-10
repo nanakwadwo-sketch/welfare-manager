@@ -343,6 +343,9 @@ export default function Landing() {
           </div>
           <p>Monthly dues · 6-month maturity · Documented claims</p>
         </div>
+        <p className="mt-4 border-t border-border/50 pt-4 text-center text-xs text-muted-foreground sm:border-t-0 sm:pt-0">
+          System developed by: Richard Osei
+        </p>
       </footer>
     </div>
   );

@@ -143,7 +143,7 @@ export default function AdminUsers() {
                         )}
                         <div className="min-w-0">
                           <div className="truncate font-medium">
-                            {u.name ?? u.email ?? "Anonymous user"}
+                            {u.name ?? u.email ?? "User"}
                           </div>
                           {u.email && u.name && (
                             <div className="truncate text-xs text-muted-foreground">
@@ -172,9 +172,6 @@ export default function AdminUsers() {
                       >
                         {u.role ?? "user"}
                       </Badge>
-                      {u.isAnonymous && (
-                        <span className="ml-2 text-xs text-muted-foreground">guest</span>
-                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
