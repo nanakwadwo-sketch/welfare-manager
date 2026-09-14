@@ -1,5 +1,6 @@
 import { StatCard } from "@/components/dashboard/shared";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/convex/_generated/api";
 import { formatCedis, formatDateTime, monthLabel } from "@/lib/format";
@@ -9,19 +10,95 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Clock,
+  Download,
+  FileSpreadsheet,
   HandCoins,
   Hourglass,
+  Loader2,
   Users,
   Wallet,
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 export default function AdminReports() {
   const reports = useQuery(api.welfare.adminReports);
+  const members = useQuery(api.welfare.adminListMembers);
 
   if (reports === undefined) {
     return <div className="h-64 animate-pulse rounded-xl bg-muted" />;
   }
+
+  const downloadMembersExcel = () => {
+    if (!members || members.length === 0) return;
+    const aoa: (string | number)[][] = [
+      [
+        "Member Code",
+        "Full Name",
+        "Email",
+        "Staff ID",
+        "Phone",
+        "Department",
+        "Join Date",
+        "Status",
+        "Maturity Date",
+        "Matured",
+        "Months Active",
+        "Total Contributed (GH¢)",
+        "Dues Payments",
+      ],
+      ...members.map((m) => [
+        m.memberCode,
+        m.fullName,
+        m.email,
+        m.staffId ?? "",
+        m.phone ?? "",
+        m.department ?? "",
+        new Date(m.joinedAt).toISOString().slice(0, 10),
+        m.status.charAt(0).toUpperCase() + m.status.slice(1),
+        new Date(m.maturity.maturityDate).toISOString().slice(0, 10),
+        m.maturity.matured ? "Yes" : "No",
+        m.maturity.monthsActive,
+        m.totalPaid,
+        m.paymentCount,
+      ]),
+      [],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "TOTAL",
+        "",
+        members.reduce((sum, m) => sum + m.totalPaid, 0),
+        members.reduce((sum, m) => sum + m.paymentCount, 0),
+      ],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"] = [
+      { wch: 12 },
+      { wch: 26 },
+      { wch: 30 },
+      { wch: 12 },
+      { wch: 16 },
+      { wch: 18 },
+      { wch: 12 },
+      { wch: 10 },
+      { wch: 14 },
+      { wch: 10 },
+      { wch: 14 },
+      { wch: 22 },
+      { wch: 14 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Members");
+    XLSX.writeFile(wb, `kgh-welfare-members-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
 
   const chartData = reports.duesByMonth.map((d) => ({
     month: monthLabel(d.month),
@@ -64,6 +141,41 @@ export default function AdminReports() {
           sub="Claims marked as paid"
         />
       </div>
+
+      <Card className="card-layer">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-[15px]">
+            <Download className="size-4 text-muted-foreground" />
+            Downloads
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/70 px-4 py-3">
+            <div className="flex items-center gap-2.5">
+              <FileSpreadsheet className="size-4 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Member register</p>
+                <p className="text-xs text-muted-foreground">
+                  All members with contributions and maturity status (.xlsx)
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              className="gap-2"
+              disabled={members === undefined || members.length === 0}
+              onClick={downloadMembersExcel}
+            >
+              {members === undefined ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Download className="size-4" />
+              )}
+              Download Excel
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-5">
         <Card className="card-layer lg:col-span-3">
