@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { useEffect } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { useNavigate } from "react-router";
+import { useNavigate, useParams } from "react-router";
 
 const MEMBER_TABS = [
   { value: "overview", label: "Overview" },
@@ -57,6 +57,24 @@ export default function Dashboard() {
   const memberName = myProfile?.fullName ?? user?.name ?? user?.email ?? "Account";
   const tabs = isAdmin ? ADMIN_TABS : MEMBER_TABS;
   const defaultTab = isAdmin ? "reports" : "overview";
+
+  // Keep the active tab in the URL so views are deep-linkable
+  // (e.g. /dashboard/members) and browser back/forward work.
+  const { tab: urlTab } = useParams();
+  const validTabs = new Set(tabs.map((t) => t.value));
+  const activeTab = urlTab && validTabs.has(urlTab) ? urlTab : defaultTab;
+
+  useEffect(() => {
+    if (urlTab !== activeTab) {
+      navigate(activeTab === defaultTab ? "/dashboard" : `/dashboard/${activeTab}`, {
+        replace: true,
+      });
+    }
+  }, [urlTab, activeTab, defaultTab, navigate]);
+
+  const handleTabChange = (value: string) => {
+    navigate(value === defaultTab ? "/dashboard" : `/dashboard/${value}`);
+  };
 
   const handleSignOut = async () => {
     await signOut();
@@ -125,7 +143,7 @@ export default function Dashboard() {
           </span>
         </div>
 
-        <Tabs defaultValue={defaultTab} className="gap-6">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="gap-6">
           <TabsList className="h-auto w-full justify-start overflow-x-auto rounded-lg bg-secondary/60 p-1 sm:w-auto">
             {tabs.map((t) => (
               <TabsTrigger
