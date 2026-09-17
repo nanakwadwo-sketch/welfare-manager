@@ -11,15 +11,25 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { formatBytes, formatDateTime, MAX_FILE_BYTES } from "@/lib/format";
+import {
+  formatBytes,
+  formatCedis,
+  formatDate,
+  formatDateTime,
+  MAX_FILE_BYTES,
+  monthLabel,
+} from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery } from "convex/react";
 import {
+  BadgeCheck,
   CheckCircle2,
   Clock,
   FileText,
+  HeartHandshake,
   Hourglass,
   Loader2,
+  Printer,
   Upload,
   Users,
   Wallet,
@@ -436,6 +446,169 @@ export function ClaimDocumentsDialog({
             </p>
           </div>
         )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------- Dues payment receipt ----------
+
+export type DuesPaymentRow = {
+  _id: Id<"duesPayments">;
+  amount: number;
+  periodMonth: string;
+  recordedAt: number;
+  note?: string;
+  acknowledgedAt?: number;
+  acknowledgedName?: string;
+};
+
+/**
+ * Acknowledge receipt of a recorded dues payment and print an official
+ * receipt. When printing, only the receipt body is visible (see the print
+ * rules in index.css).
+ */
+export function DuesReceiptDialog({
+  payment,
+  member,
+  trigger,
+}: {
+  payment: DuesPaymentRow;
+  member: { fullName: string; memberCode: string; email?: string; department?: string };
+  trigger: ReactNode;
+}) {
+  const acknowledge = useMutation(api.welfare.acknowledgeDuesPayment);
+  const [busy, setBusy] = useState(false);
+  const acknowledged = payment.acknowledgedAt !== undefined;
+
+  const handleAcknowledge = async () => {
+    setBusy(true);
+    try {
+      await acknowledge({ paymentId: payment._id });
+      toast.success("Receipt acknowledged — thank you");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not acknowledge");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const receiptNo = `DUE-${payment.periodMonth.replace("-", "")}-${payment._id.slice(-6).toUpperCase()}`;
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogContent className="print-receipt sm:max-w-md">
+        <DialogHeader className="print-hide">
+          <DialogTitle>
+            {acknowledged ? "Dues receipt" : "Acknowledge payment"}
+          </DialogTitle>
+          <DialogDescription>
+            {acknowledged
+              ? "You confirmed receipt of this payment. Print a copy for your records."
+              : "Review the details, then confirm you received this payment."}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="print-border space-y-4 rounded-lg border border-border/70 p-4">
+          <div className="flex items-start justify-between gap-3 border-b border-border/70 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <HeartHandshake className="size-5" />
+              </div>
+              <div>
+                <p className="text-sm font-bold tracking-tight">KGH Staff Welfare</p>
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Official dues receipt
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Receipt no.</p>
+              <p className="font-mono text-xs font-semibold">{receiptNo}</p>
+            </div>
+          </div>
+
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-sm">
+            <div>
+              <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Received from</dt>
+              <dd className="font-medium">{member.fullName}</dd>
+            </div>
+            <div>
+              <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Member code</dt>
+              <dd className="font-mono text-[13px]">{member.memberCode}</dd>
+            </div>
+            <div>
+              <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Dues period</dt>
+              <dd className="font-medium">{monthLabel(payment.periodMonth)}</dd>
+            </div>
+            <div>
+              <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Date recorded</dt>
+              <dd className="font-medium">{formatDate(payment.recordedAt)}</dd>
+            </div>
+            {payment.note && (
+              <div className="col-span-2">
+                <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Note</dt>
+                <dd className="text-muted-foreground">{payment.note}</dd>
+              </div>
+            )}
+          </dl>
+
+          <div className="print-border flex items-center justify-between rounded-lg border border-border/70 bg-secondary/50 px-4 py-3">
+            <span className="text-sm font-medium text-muted-foreground">Amount</span>
+            <span className="text-xl font-bold tracking-tight">{formatCedis(payment.amount)}</span>
+          </div>
+
+          {acknowledged ? (
+            <div className="border-t border-dashed border-border/70 pt-3">
+              <div className="flex items-end justify-between gap-4">
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Received by</p>
+                  <p className="border-b border-foreground/40 pb-0.5 pr-8 font-medium italic">
+                    {payment.acknowledgedName ?? member.fullName}
+                  </p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Acknowledged {formatDateTime(payment.acknowledgedAt!)}
+                  </p>
+                </div>
+                <BadgeCheck className="size-7 shrink-0 text-emerald-600" />
+              </div>
+              <p className="mt-3 text-center text-[10px] text-muted-foreground">
+                KGH Staff Welfare · computer-generated receipt · System developed by: Richard Osei
+              </p>
+            </div>
+          ) : (
+            <p className="print-hide rounded-lg border border-dashed border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+              Awaiting your acknowledgment — the signature line fills in once you
+              confirm receipt.
+            </p>
+          )}
+        </div>
+
+        <div className="print-hide flex gap-2">
+          {!acknowledged && (
+            <Button
+              className="flex-1 gap-2"
+              disabled={busy}
+              onClick={() => void handleAcknowledge()}
+            >
+              {busy ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <BadgeCheck className="size-4" />
+              )}
+              {busy ? "Acknowledging…" : "I acknowledge receipt"}
+            </Button>
+          )}
+          <Button
+            variant={acknowledged ? "default" : "outline"}
+            className="flex-1 gap-2"
+            onClick={() => window.print()}
+          >
+            <Printer className="size-4" />
+            Print receipt
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );

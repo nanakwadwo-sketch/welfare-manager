@@ -1,4 +1,5 @@
-import { EmptyState, MemberAvatar, MemberStatusBadge, MaturityProgress, StatCard } from "@/components/dashboard/shared";
+import { DuesReceiptDialog, EmptyState, MemberAvatar, MemberStatusBadge, MaturityProgress, StatCard } from "@/components/dashboard/shared";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -17,7 +18,8 @@ import {
 import { api } from "@/convex/_generated/api";
 import { formatCedis, formatDate, monthLabel } from "@/lib/format";
 import { useMutation, useQuery } from "convex/react";
-import { CalendarDays, HandCoins, IdCard, ImagePlus, Mail, Phone, Receipt, Trash2, UserRound, Wallet } from "lucide-react";
+import { CalendarDays, HandCoins, IdCard, ImagePlus, Mail, Phone, Printer, Receipt, Trash2, UserRound, Wallet } from "lucide-react";
+import { BadgeCheck } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -242,6 +244,7 @@ export default function MemberOverview() {
                   <TableHead>Amount</TableHead>
                   <TableHead className="hidden sm:table-cell">Recorded</TableHead>
                   <TableHead className="hidden md:table-cell">Note</TableHead>
+                  <TableHead className="text-right">Receipt</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -256,6 +259,31 @@ export default function MemberOverview() {
                     </TableCell>
                     <TableCell className="hidden max-w-[200px] truncate text-muted-foreground md:table-cell">
                       {p.note ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {p.acknowledgedAt ? (
+                        <DuesReceiptDialog
+                          payment={p}
+                          member={profile}
+                          trigger={
+                            <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs">
+                              <Printer className="size-3.5" />
+                              Receipt
+                            </Button>
+                          }
+                        />
+                      ) : (
+                        <DuesReceiptDialog
+                          payment={p}
+                          member={profile}
+                          trigger={
+                            <Button variant="outline" size="sm" className="h-8 gap-1.5 px-2 text-xs">
+                              <BadgeCheck className="size-3.5 text-muted-foreground" />
+                              Acknowledge
+                            </Button>
+                          }
+                        />
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

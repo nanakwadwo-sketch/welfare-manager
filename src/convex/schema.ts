@@ -63,6 +63,8 @@ const schema = defineSchema(
       periodMonth: v.string(), // "YYYY-MM"
       recordedAt: v.number(),
       note: v.optional(v.string()),
+      acknowledgedAt: v.optional(v.number()), // member confirmed receipt
+      acknowledgedName: v.optional(v.string()), // name captured at acknowledgment
     }).index("by_member", ["memberId"]),
 
     // Configurable benefit packages. Seeded with the default GH¢ amounts.

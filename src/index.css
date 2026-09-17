@@ -147,3 +147,29 @@
     text-wrap: balance;
   }
 }
+
+/* ---------- Printable dues receipt ---------- */
+/* Receipts render into a dedicated .print-receipt element; when printing, only
+   that element is visible and all dashboard chrome is hidden. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-receipt,
+  .print-receipt * {
+    visibility: visible;
+  }
+  .print-receipt {
+    position: absolute;
+    inset: 0;
+    padding: 24px;
+    color: #000 !important;
+    background: #fff !important;
+  }
+  .print-receipt .print-hide {
+    display: none !important;
+  }
+  .print-receipt .print-border {
+    border-color: #000 !important;
+  }
+}

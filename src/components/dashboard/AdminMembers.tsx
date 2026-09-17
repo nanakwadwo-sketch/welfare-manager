@@ -1,4 +1,14 @@
 import { EmptyState, MemberAvatar, MemberStatusBadge, MaturityProgress } from "@/components/dashboard/shared";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -39,6 +49,7 @@ import {
   Loader2,
   Pencil,
   Search,
+  Trash2,
   UserPlus,
   Users,
 } from "lucide-react";
@@ -84,6 +95,7 @@ export default function AdminMembers() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [editing, setEditing] = useState<MemberRow | null>(null);
   const [duesFor, setDuesFor] = useState<MemberRow | null>(null);
+  const [deleting, setDeleting] = useState<MemberRow | null>(null);
 
   const filtered = useMemo(() => {
     if (!members) return [];
@@ -215,6 +227,15 @@ export default function AdminMembers() {
                         >
                           <Pencil className="size-4" />
                         </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Delete member permanently"
+                          className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => setDeleting(m as MemberRow)}
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -234,7 +255,65 @@ export default function AdminMembers() {
       <BulkUploadDialog open={bulkOpen} onOpenChange={setBulkOpen} />
       <EditMemberDialog member={editing} onOpenChange={(o) => !o && setEditing(null)} />
       <RecordDuesDialog member={duesFor} onOpenChange={(o) => !o && setDuesFor(null)} />
+      <DeleteMemberDialog member={deleting} onOpenChange={(o) => !o && setDeleting(null)} />
     </div>
+  );
+}
+
+// ---------- Delete member ----------
+
+function DeleteMemberDialog({
+  member,
+  onOpenChange,
+}: {
+  member: MemberRow | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const deleteMember = useMutation(api.welfare.adminDeleteMember);
+  const [busy, setBusy] = useState(false);
+
+  const handleDelete = async () => {
+    if (!member) return;
+    setBusy(true);
+    try {
+      await deleteMember({ memberId: member._id });
+      toast.success(`${member.fullName} deleted from the system`);
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <AlertDialog open={!!member} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete {member?.fullName} permanently?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This removes the member{member?.memberCode ? ` (${member.memberCode})` : ""} and
+            all of their welfare data: dues payments, claims and supporting
+            documents, event registrations, profile picture, and their sign-in
+            account. This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive text-white hover:bg-destructive/90"
+            disabled={busy}
+            onClick={(e) => {
+              e.preventDefault();
+              void handleDelete();
+            }}
+          >
+            {busy && <Loader2 className="size-4 animate-spin" />}
+            {busy ? "Deleting…" : "Delete permanently"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

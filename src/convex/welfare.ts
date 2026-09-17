@@ -60,6 +60,17 @@ const DEFAULT_PACKAGES: Array<{
   { key: "resignation", label: "Resignation", kind: "percent", amount: 70, percentOfContribution: 70 },
 ];
 
+/** "2026-03" -> "Mar 2026" (matches the frontend monthLabel helper). */
+export function monthLabel(period: string): string {
+  const [y, m] = period.split("-").map(Number);
+  if (!y || !m) return period;
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-GB", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 export function monthsBetween(fromMs: number, toMs: number): number {
   return Math.max(0, Math.floor((toMs - fromMs) / MONTH_MS));
 }
@@ -269,6 +280,43 @@ export const getMyPayments = query({
       .withIndex("by_member", (q) => q.eq("memberId", member._id))
       .collect();
     return payments.sort((a, b) => b.recordedAt - a.recordedAt);
+  },
+});
+
+/**
+ * Member confirms receipt of a recorded dues payment. The acknowledgment is
+ * captured once — the member's name at the time, not just "the account did
+ * it" — so the printable receipt has a real signature line.
+ */
+export const acknowledgeDuesPayment = mutation({
+  args: { paymentId: v.id("duesPayments") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not signed in");
+    const user = await ctx.db.get(userId);
+    const email = user?.email ?? null;
+    if (!email) throw new Error("No email on your account");
+    const member = await ctx.db
+      .query("members")
+      .withIndex("by_email", (q) => q.eq("email", email.toLowerCase()))
+      .first();
+    if (!member) throw new Error("You are not registered as a member");
+    const payment = await ctx.db.get(args.paymentId);
+    if (!payment) throw new Error("Payment not found");
+    if (payment.memberId !== member._id)
+      throw new Error("You can only acknowledge your own payments");
+    if (payment.acknowledgedAt) return; // already acknowledged — idempotent
+    await ctx.db.patch(args.paymentId, {
+      acknowledgedAt: Date.now(),
+      acknowledgedName: member.fullName,
+    });
+    await logActivity(
+      ctx,
+      userId,
+      user?.name,
+      "dues.acknowledged",
+      `${member.fullName} acknowledged ${monthLabel(payment.periodMonth)} dues (GH¢${payment.amount.toFixed(2)})`,
+    );
   },
 });
 
