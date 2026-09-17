@@ -60,6 +60,7 @@ export default function Dashboard() {
 
   // Keep the active tab in the URL so views are deep-linkable
   // (e.g. /dashboard/members) and browser back/forward work.
+  // Unknown or role-mismatched tabs fall back to the default view.
   const { tab: urlTab } = useParams();
   const validTabs = new Set(tabs.map((t) => t.value));
   const activeTab = urlTab && validTabs.has(urlTab) ? urlTab : defaultTab;

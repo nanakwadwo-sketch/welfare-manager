@@ -124,6 +124,7 @@ createRoot(document.getElementById("root")!).render(
                 path="/auth"
                 element={<AuthPage redirectAfterAuth="/dashboard" />}
               />
+              {/* Tab segment is optional: both /dashboard and /dashboard/<tab> resolve here. */}
               <Route
                 path="/dashboard/:tab?"
                 element={

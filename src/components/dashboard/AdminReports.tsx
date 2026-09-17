@@ -29,6 +29,7 @@ export default function AdminReports() {
     return <div className="h-64 animate-pulse rounded-xl bg-muted" />;
   }
 
+  /** Exports the full member register as a dated .xlsx workbook. */
   const downloadMembersExcel = () => {
     if (!members || members.length === 0) return;
     const aoa: (string | number)[][] = [
